@@ -4,6 +4,14 @@ A self-hosted mobile workbench built on DeepSeek Harness. Run the Agent on your 
 
 Independent community project; not an official DeepSeek product. **0.1.0-alpha.1 is an experimental source release.** Bring your own server, HTTPS endpoint and model credentials. No user conversations, private projects, email indexes, attachments or credentials are included.
 
+## Models, Agents and a workbench you can keep extending
+
+The product thesis is that models and Agents form two foundations of AI solutions. Models provide capabilities such as language, reasoning, code and vision; an Agent connects them to tools, context, permissions and execution workflows. Different model/Agent combinations fit different tasks.
+
+Harness's everything-is-a-plugin architecture makes another workflow possible: when the source and permissions are available, ask the Agent from your phone to modify its own workbench. For example, request separate image/file upload entries, a PDF-to-Markdown tool, or changes to theme and interaction. It can edit the corresponding web/plugin code, build and verify it, then apply the update or restart the relevant service. Self-modification here means changes to the workbench software, tools and interface.
+
+Most cloud web/plugin updates do not require an APK reinstall; native permissions and bridge changes still do. The aim is a personal workbench that retains project context while its tools and model integrations can evolve with actual needs. This is a product direction, not a claim that the current release automatically selects or supports every model and task.
+
 ## Components
 
 - `packages/mobile-ui`: mobile UI, pairing gateway and push integration, derived from dsh-zen-remote.
