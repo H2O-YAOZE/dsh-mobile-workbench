@@ -1,0 +1,39 @@
+plugins {
+    id 'com.android.application'
+}
+
+def serverUrl = providers.gradleProperty('dshBaseUrl').getOrElse('https://example.invalid')
+def parsedUrl = new URI(serverUrl)
+if (parsedUrl.scheme != 'https' || !parsedUrl.host || parsedUrl.userInfo ||
+    (parsedUrl.port != -1 && parsedUrl.port != 443) || parsedUrl.query || parsedUrl.fragment ||
+    (parsedUrl.path && parsedUrl.path != '/')) {
+    throw new GradleException('dshBaseUrl must be an HTTPS origin on port 443, without credentials or path')
+}
+
+android {
+    buildFeatures { buildConfig true }
+    namespace 'com.yjy.dsh'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "org.dshmobile.workbench"
+        buildConfigField "String", "DSH_BASE_URL", "\"${serverUrl}\""
+        minSdk 24
+        targetSdk 34
+        versionCode 6
+        versionName "1.5"
+        testInstrumentationRunner "com.yjy.dsh.PhoneInstrumentation"
+    }
+
+    buildTypes {
+        release {
+            debuggable false
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

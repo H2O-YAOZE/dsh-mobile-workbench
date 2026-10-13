@@ -1,0 +1,42 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="light"><title>Token 用量 · DSH</title><link rel="stylesheet" href="/usage/style.css?v=two-charts-20261012"><script id="snapshot" type="application/json"><!--SNAPSHOT--></script><script src="/usage/app.js?v=two-charts-20261012" type="module"></script><script src="/projects/embedded.js" defer></script></head>
+
+<body><main><div class="qq-brand"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAIAAABvFaqvAAAASUlEQVR4nGMU13VloAZgooopDKMGEQNY0PgvLu1iIBpI6LkN4lhjHHQJkoXUwJZACmCauIiJWgYxDv3ARgajKZs0wESi+iFkEAB0gQtXAZDK6gAAAABJRU5ErkJggg==" alt=""><strong>DSH</strong><span>经典版</span></div>
+
+<header><span id="connection" role="status">显示云端保存的快照</span></header>
+
+<h1>Token 用量</h1>
+
+<section class="trend-panel" aria-labelledby="trend-title">
+
+<div class="trend-head"><h2 id="trend-title">Token 用量</h2><div class="range-tabs" role="group" aria-label="趋势统计期间"><button type="button" data-range="7" aria-pressed="true">近 7 天</button><button type="button" data-range="30" aria-pressed="false">近 30 天</button><button type="button" data-range="all" aria-pressed="false">至今为止</button></div></div>
+
+<div class="trend-summary"><span id="trend-period-label">近 7 天 Token</span><strong id="trend-total-sum">—</strong></div><p class="trend-note" id="trend-range-note"></p>
+
+<div class="chart-block"><div class="chart-head"><span class="chart-title">总量</span></div><div class="chart" id="chart-total"></div></div>
+
+<div class="chart-block"><div class="chart-head"><span class="chart-title">应用用量</span></div><div class="chart-legend" id="chart-legend"></div><div class="chart" id="chart-split"></div></div>
+
+</section>
+
+<div class="scope-tabs" role="tablist" aria-label="用量来源"><button id="tab-computer" role="tab" aria-selected="true" aria-controls="scope-panel">电脑本机</button><button id="tab-cloud" role="tab" aria-selected="false" aria-controls="scope-panel">DSH 云端</button></div>
+
+<div id="scope-panel" role="tabpanel" aria-labelledby="scope-title"><h2 id="scope-title">电脑本机用量</h2><p id="scope-note" class="intro">打开 Codex 后自动采集并上传；仅计电脑本机，已排除 DSH 云端记录。</p>
+
+<section class="capture"><div><span id="captured-label" class="label">电脑采集时间</span><strong id="captured">等待首次上传</strong></div><div><span id="received-label" class="label">云端接收时间</span><span id="received">—</span></div></section>
+
+<div id="empty" class="empty">还没有收到电脑的用量快照。电脑上的计量程序启动并完成采集后，会自动上传。</div>
+
+<div id="content" hidden>
+
+<section class="summary"><div class="primary"><span id="day-label" class="label">采集当日</span><strong id="today-total">—</strong><span class="unit">Token 已消耗</span></div><div class="ranges"><div><span class="label">近 7 天</span><strong id="seven-total">—</strong></div><div><span class="label">近 30 天</span><strong id="month-total">—</strong></div><div><span class="label">全部可读记录</span><strong id="all-total">—</strong></div></div></section>
+
+<section><h2>客户端与常用模型</h2><p class="section-note">卡片显示近 30 天用量，点开可查看全部模型、分项及每日详情。</p><div id="clients"></div></section>
+
+<details><summary>统计范围与数据完整性</summary><div id="coverage"></div><div id="sources"></div><p>只计入可读日志中的 Token。缓存和推理属于明细，不重复加进总量；这不是账号完整账单、余额或积分。</p></details>
+
+</div>
+
+</div><footer>电脑本机上传快照；DSH 云端独立计量。手机接收更新，本页不调用 AI 模型。只统计日志已报告的 Token，不等同服务商账单。</footer>
+
+<nav class="bottom-nav" data-qq="footer" aria-label="主要功能"><a href="/?dsh-home=1"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAIAAABvFaqvAAAASUlEQVR4nGMU13VloAZgooopDKMGEQNY0PgvLu1iIBpI6LkN4lhjHHQJkoXUwJZACmCauIiJWgYxDv3ARgajKZs0wESi+iFkEAB0gQtXAZDK6gAAAABJRU5ErkJggg==" alt=""><span>对话</span></a><a href="/projects" ><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAIAAABvFaqvAAAASUlEQVR4nGMU13VloAZgooopDKMGEQNY0PgvLu1iIBpI6LkN4lhjHHQJkoXUwJZACmCauIiJWgYxDv3ARgajKZs0wESi+iFkEAB0gQtXAZDK6gAAAABJRU5ErkJggg==" alt=""><span>项目</span></a><a href="/usage" data-active="true" aria-current="page"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 20V12h3v8M11 20V5h3v15M17 20V9h3v11"/></svg><span>用量</span></a><a href="/?qq-settings=1"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10l2 2M5 19l2-2M17 7l2-2"/></svg><span>设置</span></a></nav></main></body></html>
+

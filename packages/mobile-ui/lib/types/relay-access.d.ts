@@ -1,0 +1,310 @@
+/**
+ * Pure access control for the relay invoke and stream routes (2.0.0
+ * desktop-client).
+ *
+ * PER-METHOD ALLOWLIST, not a generic id scan. The first draft extracted
+ * whatever session ids it could find in `args.request` and checked those —
+ * which a hostile client defeats with a DECOY: DSH's gateway validates only
+ * the top-level argument names (`assertExactArguments`) and zod silently
+ * strips unknown fields inside `request`, so padding the arguments with an
+ * extra shared `sessionId` gets through the share-table check while the
+ * method's REAL ownership field (`agentId`, `request.parentSessionId`, …)
+ * goes unchecked. The fix: every invokable method is registered below with
+ * EXACTLY the fields that locate its session, authorization looks at those
+ * fields and nothing else, and any method not in the table is refused
+ * (`forbidden-method`) before an id is ever read. The stream route
+ * ({@link decideStream}) reads the SAME table: only `stream: true` entries
+ * may ride it, and the field rules are identical.
+ *
+ * Field verification (T22a-fix, against the 0.2.0-rc.1 wire inventory in the
+ * review's keys.txt and the local `typert.remote-client.js` — the spike
+ * proved those files byte-identical across 0.1.7/0.2.0, docs/spike-relay.md
+ * §2.3):
+ *
+ * - `request.address` exists only on `session/follow` and `session/page`;
+ *   its zod schema is a union of EXACTLY two shapes —
+ *   `{kind:'session', sessionId}` and `{kind:'subagent', parentSessionId,
+ *   childSessionId, mode}` — and DSH's `validateAddress` re-checks that the
+ *   child belongs to the parent, so judging a subagent call by the parent id
+ *   is authoritative. Any other kind, or a missing id, is a refusal.
+ * - every other method registered before T31 carries `request.sessionId`.
+ *
+ * T31 additions, each verified against the 0.2.0 sources before registering:
+ *
+ * - `session/create` carries `request.workspaceId` — a WORKSPACE id, never
+ *   share-checked (workspaces do not live in the share table): it must be
+ *   present, and the relay route validates it against the server's live
+ *   workspace list before forwarding (relay-server.ts). The new session is
+ *   auto-shared there, which is what makes the entry safe at all.
+ * - `session/fork` carries `request.sessionId` (the SOURCE session); the
+ *   forked child is auto-shared after the call succeeds.
+ * - `subagents/prompt` (`request.parentSessionId`) and
+ *   `subagents/interruptByParent` (TOP-LEVEL `parentSessionId`) are judged
+ *   by the parent: DSH re-validates the parent-child link itself
+ *   (`authorizeLineage` on both delivery paths of prompt; the user-authority
+ *   check inside `interrupt`), so an unshared child can no more be reached
+ *   than an unshared parent — it is refused server-side by DSH.
+ * - `fileUploads/upload` and `fileReferences/list` carry a TOP-LEVEL
+ *   `agentId`: the gateway's `agent` lookup resolves it through the agent
+ *   registry keyed by SESSION id (dsh-agent registers wire `agentId`,
+ *   wireTypeSymbol `SessionId`), so it IS the session id and shares its
+ *   check. A shared `request.sessionId` padded next to it buys nothing —
+ *   only the registered field is read.
+ *
+ * T41a additions (the panel long tail where the session id hides in another
+ * argument), each verified against the 0.2.0 sources before registering:
+ *
+ * - the `agentId` group grows: `goals/get|edit|pause|resume|clear`,
+ *   `commands/list|execute`, `agentPresets/select`,
+ *   `sessionReferenceResolver/candidates` and the whole `terminal/*` agent
+ *   half — every one takes `agent` as its first parameter, wire `agentId`,
+ *   source `lookup: 'agent'`, wireTypeSymbol `SessionId` (the same shape
+ *   T31 verified for fileUploads/fileReferences).
+ * - `workspaceFiles/list|changes|read|readBytes|stat` carry a TOP-LEVEL
+ *   `workspaceFileScopeId`: the host registers the `workspaceFileScope`
+ *   lookup with wireTypeSymbol `SessionId` and resolves it by session —
+ *   `sessions.get(sessionId).header.cwd` is only the BASE for relative
+ *   paths (dsh-api-workspace-files lib/index.js, the lookup registration),
+ *   not a containment: absolute paths anywhere the server process can read
+ *   are served (see the registry note below). The field itself is
+ *   share-checked like any session id.
+ * - `terminal/list` and `terminal/retain` take a plain TOP-LEVEL json
+ *   `sessionId` (source `'json'`, not a lookup) — same check.
+ * - `sessionFeedback/record` carries `request.sessionId` — a plain B-type.
+ * - `sessionReferenceResolver/candidates` (@ mentions) answers with EVERY
+ *   server session — title, cwd, and a ready-made `dsh-session:` mention
+ *   — so its result travels only through the row filter that drops
+ *   inaccessible sessions (relay-server.ts, the session/list discipline).
+ * - `subagents/prompt` (`request.parentSessionId` +
+ *   `request.childSessionId`) and `subagents/interruptByParent` (TOP-LEVEL
+ *   `parentSessionId` + `childSessionId`) now claim BOTH ids: the parent is
+ *   share-checked directly, the child through the injected `parentOf`
+ *   inheritance (`store.isAccessible(id, parentOf)` — a subagent session
+ *   never enters the table, it borrows its ancestor's share). A child that
+ *   does not descend from the claimed parent fails its own check, so the
+ *   "shared parent + foreign child" decoy refuses here before DSH's own
+ *   lineage validation is ever reached.
+ *
+ * PROMPT TEXT REFERENCES ARE CHECKED TOO: a prompt whose text carries a
+ * canonical `dsh-session:<base64url(id)>` address makes DSH inject that
+ * session's content (`prepareDirectMessages` → `readSurface`, with no
+ * access check of its own), so the relay refuses any address naming an
+ * inaccessible session wherever such a text can enter (relay-server.ts,
+ * scanning by the shared rule in session-reference.ts, T41a-fix2): the
+ * `session/prompt` / `subagents/prompt` content, a `session/updateQueue`
+ * EDIT's replacement content, and EVERY string of a `commands/execute`
+ * call (a command handler steers its raw input in as a user message —
+ * `/plan <text>` does exactly that). The client restores its virtual ids
+ * inside those same positions before the call travels (intercept.ts).
+ *
+ * TERMINALS ARE DELIBERATE (SPEC user story 45, explicit user request):
+ * remote terminals open SERVER-side, so a paired desktop client working a
+ * shared session gets a real PTY in the server's workspace — a shell
+ * running as the server user WITHOUT the agent sandbox or approval
+ * restrictions (RT dsh-api-terminal-controller create), the session cwd
+ * being only the starting directory. The authorization boundary is exactly
+ * the standing one — the session must be shared AND the caller must be a
+ * paired desktop application client (the gateway's device auth + relay
+ * secret), a TRUSTED DEVICE: the shared-only rule constrains session data,
+ * not the machine. No extra switch is added on top; closing the session's
+ * remote access closes its terminals with it (the stream route kills
+ * `terminal/follow` / `terminal/retain` with `unshared`, like every other
+ * session-scoped stream). The terminal ids and attachment ids inside these
+ * calls are CLIENT-generated (`WebTerminalId` / `TerminalAttachmentId` type
+ * symbols, distinct from `SessionId`) and pass through untouched.
+ *
+ * Pure functions: no I/O, no clock, the share-table lookup is injected.
+ */
+/** Which standing filter the caller must apply to a global stream's frames
+ * (`src/relay-filter.ts` owns both implementations; the `$zr/events`
+ * forwarding subscription is filtered by relay-server.ts itself — it needs
+ * the per-eventId registry, not a pure frame function). */
+export type StreamFilter = 'workspace' | 'control';
+/** Which standing filter the caller must apply to an invoke result before it
+ * travels: `session-list` narrows the unscoped `session/list` items
+ * (relay-filter.ts), `session-reference-candidates` drops the @-mention
+ * candidate rows whose session is not accessible (relay-server.ts — the host
+ * lists EVERY server session with title, cwd and a ready-made mention, so
+ * unshared rows must never leave the box), and `model-catalog` empties the
+ * `session/modelCatalog` `failures` array (T52-fix — relay-filter.ts: the
+ * host's per-group error texts may carry endpoint or credential details, and
+ * the client discards `failures` anyway). */
+export type InvokeFilter = 'session-list' | 'session-reference-candidates' | 'model-catalog';
+/** One invoke decision: allow (optionally through a standing result filter),
+ * or the reason that goes into the 403 body. */
+export type InvokeDenyReason = 'no-session' | 'not-shared' | 'forbidden-method';
+export type InvokeDecision = {
+    allow: true;
+    filter?: InvokeFilter;
+} | {
+    allow: false;
+    reason: InvokeDenyReason;
+};
+/** One stream decision: allow (global streams carry a `streamFilter`, scoped
+ * streams list the session ids the subscription depends on — the relay kills
+ * the stream and counts viewers with them, and the event subscription sets
+ * `events`), or the 403 reason. */
+export type StreamDecision = {
+    allow: true;
+    filter?: StreamFilter;
+    sessionIds: string[];
+    events?: true;
+} | {
+    allow: false;
+    reason: InvokeDenyReason;
+};
+/**
+ * Decide one relayed invoke against the per-method allowlist:
+ *
+ * 1. the method must be registered AND invoke-delivered (a `stream: true`
+ *    entry refuses the invoke route) — anything else is `forbidden-method`;
+ * 2. its registered fields must all yield an owned session id — else
+ *    `no-session`;
+ * 3. every claimed id must pass `isAccessible` — one unreachable id refuses
+ *    the whole call (`not-shared`): an unshared session must not become
+ *    readable through a shared one riding in the same arguments.
+ *
+ * A method registered with `resultFilter` allows with that marker attached;
+ * the caller filters the result before it travels (never the reverse — the
+ * filter is an OUTPUT discipline, the access check above stays input-only).
+ */
+export declare function decideInvoke(namespace: string, method: string, args: unknown, isAccessible: (sessionId: string) => boolean): InvokeDecision;
+/**
+ * Decide one relayed STREAM subscription against the same table:
+ *
+ * 1. the method must be registered AND stream-delivered — an invoke-only
+ *    method riding the stream route is `forbidden-method`, exactly like a
+ *    stream method riding the invoke route;
+ * 2. a global entry (`streamFilter` set) allows unconditionally — its frames
+ *    are filtered per frame, so there is nothing to check up front;
+ * 3. any other entry follows the {@link decideInvoke} field rules verbatim:
+ *    all registered fields must yield owned ids and every id must be
+ *    accessible, and the claimed ids ride back to the caller, which kills the
+ *    subscription when one of them stops being shared.
+ */
+export declare function decideStream(namespace: string, method: string, args: unknown, isAccessible: (sessionId: string) => boolean): StreamDecision;
+/**
+ * The `$events/result` answer body (T32), as the client sends it:
+ * `{ eventId, result }`. `result` is the Remote event OUTCOME and travels
+ * VERBATIM — dsh-api-gateway's `parseRemoteEventResult` is the validator
+ * (exactly `{clientId,eventId,outcome}` up there; kinds `next` / `result`
+ * with optional JSON `value` / `rejected` with `{name,message,code?,details?}`),
+ * and a malformed one comes back as the gateway's own 200 error envelope, so
+ * re-validating here would only invent a second dialect for the same refusal.
+ * `eventId` ownership (forwarded on a live subscription, session still
+ * reachable) is the ROUTE's check — it needs the handler's registry.
+ */
+export interface EventResultBody {
+    eventId: string;
+    result: Record<string, unknown>;
+}
+export declare function parseEventResultBody(body: unknown): EventResultBody | undefined;
+/**
+ * The plain-HTTP panel long tail (T41b): the session-page surfaces that do
+ * NOT ride the typert gateway but GET `/api/...` routes registered as exact
+ * Fetch routes on the host's connection service (RT
+ * dsh-client-ui-deliverables/lib/index.js — `ctx.connection.fetch.register`
+ * at ~49-58 and ~84-90; the shared handler they dispatch through is
+ * `createSharedFetchHandler('/api')`, dsh-client-connection/lib/index.js
+ * ~608-637). Each entry names the query parameter that locates the session —
+ * the same per-route registration discipline as RELAY_METHODS, and the same
+ * refusal defaults: a route not in this table answers `unknown-route`
+ * (404) before any id is read, and a registered route is judged ONLY along
+ * its declared field.
+ *
+ * Deliberately ABSENT (the known limitations of the HTTP interception, kept
+ * beside the registry that makes the contrast true):
+ *
+ * - `/api/session.export` (session log download) — an anchor-click download,
+ *   not a fetch call at all, and a full ZIP of the session's server-side log
+ *   is not a body worth re-streaming through the relay. Remote sessions have
+ *   export DISABLED instead (T51): the sub-client's own backend refuses
+ *   `/api/session.export` for a virtual id with 403 `remote-unsupported`
+ *   before the local route is ever reached (fetch-route-intercept.ts), and
+ *   the UI entry is hidden on the same html attribute
+ *   (remote-session.css.ts) — the host route's answer for a foreign id
+ *   never happens.
+ * - `/api/present.host` — takes NO parameters and reports the machine the
+ *   SERVER process runs on; forwarding it would read server-desktop facts
+ *   into a panel whose actions stay hidden remotely, so it is not relayed.
+ * - `/api/changes.open` and `/api/present.open` — POST actions that open
+ *   files ON THE SERVER MACHINE (Finder / applications); meaningless from a
+ *   sub-client, so the UI entries are hidden remotely (remote-session.css)
+ *   and the routes are not registered here.
+ *
+ * The one HTTP route that USED to be absent is no longer (T51):
+ * `/api/session/uploadFileBinary` (attachment upload, RT
+ * dsh-client-file-upload) — its Blob/stream branch runs inside a Web Worker
+ * over XHR / Worker-scoped fetch, which neither a `window.fetch` wrapper nor
+ * the GET passthrough this table serves can carry. The sub-client's own
+ * backend instead wraps that entry in the host's `fetchRoutes` map
+ * (fetch-route-intercept.ts) and forwards the raw byte stream through the
+ * DEDICATED binary channel `POST relay/v1/upload`, whose query is decided by
+ * {@link decideUploadQuery} below — the same parse-once normalization, share
+ * table and refusal codes as everything else here.
+ */
+export interface RelayHttpRoute {
+    /** The query parameter carrying the owning session id. */
+    sessionField: 'sessionId';
+}
+export declare const RELAY_HTTP_ROUTES: Readonly<Record<string, RelayHttpRoute>>;
+/** One plain-HTTP decision: allow — carrying the NORMALIZED query string
+ * that is the only thing the caller may put on the synthetic Request URL —
+ * or the reason for the answer: `unknown-route` (not in
+ * {@link RELAY_HTTP_ROUTES}) answers 404, `no-session` (the field is missing
+ * or duplicated) and `bad-query` (a whitelisted coordinate repeats or is not
+ * a decimal non-negative integer string) answer 400, and `not-shared`
+ * answers 403 like every other session-scoped refusal. */
+export type HttpDenyReason = 'unknown-route' | 'no-session' | 'bad-query' | 'not-shared';
+export type HttpDecision = {
+    allow: true;
+    query: string;
+} | {
+    allow: false;
+    reason: HttpDenyReason;
+};
+/**
+ * Decide one relayed `/api` GET against the per-route allowlist, and
+ * NORMALIZE the query. The two halves of this route used to disagree about
+ * parsing: `URLSearchParams` keeps `\t` / `\r` / `\n` inside key names
+ * (`session\tId` is one parameter here) while the WHATWG URL parser strips
+ * control characters before the request URL is built — so a query whose
+ * checkable `sessionId` named a shared session could DISPATCH as two
+ * parameters, with the serving route's own `get('sessionId')` reading the
+ * first one, a secret (reviewer-confirmed 200). The fix is structural: this
+ * function parses ONCE, takes only the whitelisted parameters — `sessionId`
+ * exactly once (its id must pass the share table), `seq` / `index` at most
+ * once each and decimal non-negative integers — and returns the rebuilt,
+ * fixed-order query string; the caller composes the synthetic URL from THAT
+ * string alone, never from raw input. Unknown parameters are dropped.
+ */
+export declare function decideHttpRoute(route: unknown, query: unknown, isAccessible: (sessionId: string) => boolean): HttpDecision;
+/**
+ * The binary upload channel's query (T51), decided with the SAME
+ * parse-once discipline as {@link decideHttpRoute}: the wire string is
+ * parsed exactly once here, only `sessionId` and `name` are kept, and the
+ * caller composes the synthetic Request URL from the RETURNED string alone.
+ * `URLSearchParams` keeps `\t` / `\r` / `\n` inside key names while the
+ * WHATWG URL parser strips control characters — the differential that was
+ * T41b-fix's authorization bypass on the GET routes — so the check and the
+ * dispatch must see one parse.
+ *
+ * `sessionId` exactly once, a non-empty string, and share-checked like any
+ * other session id; a repeat is `no-session` (400). `name` (the file's
+ * display name — the host route passes it to its own leaf-name sanitizer,
+ * RT dsh-client-file-upload lib/index.js `handleFileUploadHttp`) at most
+ * once; a repeat is `bad-query` (400) and an empty value is dropped, the
+ * same "absent" the host route reads when the browser sent none. Everything
+ * else is discarded before an id is read.
+ */
+export type UploadQueryDecision = {
+    allow: true;
+    sessionId: string;
+    name: string | undefined;
+    query: string;
+} | {
+    allow: false;
+    reason: 'no-session' | 'bad-query' | 'not-shared';
+};
+export declare function decideUploadQuery(query: unknown, isAccessible: (sessionId: string) => boolean): UploadQueryDecision;
+//# sourceMappingURL=relay-access.d.ts.map

@@ -1,0 +1,1004 @@
+// compat — split from src/client/mobile.css.ts (2026-08-16), order preserved.
+// Do not reorder: styles/index.ts concatenates in this exact order.
+
+import { UPLOAD_DIR } from '../attach-upload.ts'
+
+/* Presence gate for @ace-zone/dsh-market. Its markup carries no mount
+   marker and its `dshm-` class prefix is not proof of identity — several
+   unrelated plugins call themselves a "dsh market". The version chip in
+   the modal header is rendered as
+   `<span class="dshm-ver" title="@ace-zone/dsh-market">`, i.e. the exact
+   package name as a rendered contract, so it is the one selector that
+   cannot match anything else. Every rule below hangs off it: with the
+   plugin absent (or its modal closed) nothing matches and the section is
+   inert. */
+const MARKET = '.dshm-ver[title="@ace-zone/dsh-market"]'
+
+export const COMPAT_CSS = `  /* ---------- dsh-web-ui family compatibility ----------
+     The linxin666 plugin suite extends the shell frame directly:
+       - aionui-panel appends two trailing grid columns (explorer / preview)
+         plus absolute drag handles to [data-dsh-frame]; its 5-track inline
+         grid is already overridden above, but the handles and columns would
+         still float over the main UI. On mobile the columns leave the grid
+         as floating bottom sheets and keep their own visibility state —
+         the suite's collapse chevron / preview tabs still work, so no
+         feature is lost. The task-board / ssh plugins inject sidebar
+         entries and center-column takeover panels; the entries need
+         spacing and the kanban needs scrollable columns. */
+
+  /* Touch devices: the drag handles are useless — the floating expand
+     button is the opener. */
+  .aionui-explorer-handle,
+  .aionui-preview-handle {
+    display: none !important;
+  }
+
+  /* Shared base: both columns leave the grid as floating panels. The
+     explorer is gated shut by default (its own persisted expanded state
+     must never cover the mobile UI on load); the header Files action opens
+     it via the frame marker below, and the sheet's own collapse chevron
+     clears it. Preview stays owned by the suite (hidden while no tab is
+     open). The per-column rules below override the geometry. */
+  [data-aionui-explorer-col],
+  [data-aionui-preview-col] {
+    position: fixed !important;
+    z-index: 55 !important;
+    background: var(--aion-bg-base, #ffffff) !important;
+    border-left: none !important;
+  }
+  /* Explorer (file tree) bottom sheet: bottom edge aligned exactly with
+     the composer card's bottom line — the card sits 36px above the
+     viewport bottom (8px composer padding + the 28px stats strip below
+     the card), so the sheet uses the same 36px bottom offset. */
+  [data-aionui-explorer-col] {
+    visibility: hidden !important;
+    left: 8px !important;
+    right: 8px !important;
+    top: auto !important;
+    bottom: 36px !important;
+    width: auto !important;
+    height: min(55dvh, 460px) !important;
+    max-height: calc(100dvh - 44px) !important;
+    border-radius: 14px !important;
+    overflow: hidden !important;
+    box-shadow: 0 -4px 28px rgba(0, 0, 0, .18) !important;
+    animation: dsh-mobile-nav-sheet-up .24s var(--ds-ease-out, ease-in-out) !important;
+  }
+  /* Preview (file content) bottom sheet. Gated shut by default: the suite
+     persists open preview tabs in localStorage and restores them on load,
+     which would pop the sheet over the fresh UI. The client only sets the
+     frame marker after the user taps a file row in the explorer; the
+     suite's own collapse chevron clears it via the visibility watcher. */
+  [data-aionui-preview-col] {
+    visibility: hidden !important;
+    position: fixed !important;
+    left: 8px !important;
+    right: 8px !important;
+    top: auto !important;
+    bottom: 40px !important;
+    width: auto !important;
+    height: min(50dvh, 420px) !important;
+    max-height: calc(100dvh - 48px) !important;
+    border-radius: 14px !important;
+    overflow: hidden !important;
+    box-shadow: 0 -4px 28px rgba(0, 0, 0, .18) !important;
+    z-index: 56 !important;
+    animation: dsh-mobile-nav-sheet-up .24s var(--ds-ease-out, ease-in-out) !important;
+    /* Fullscreen toggle (issue #8): animate the geometry change instead of
+       snapping. visibility is deliberately not listed, so opening/closing
+       the sheet stays instant; the open/close keyframes own transform. */
+    transition:
+      left .24s var(--ds-ease-out, ease-in-out),
+      right .24s var(--ds-ease-out, ease-in-out),
+      top .24s var(--ds-ease-out, ease-in-out),
+      bottom .24s var(--ds-ease-out, ease-in-out),
+      width .24s var(--ds-ease-out, ease-in-out),
+      height .24s var(--ds-ease-out, ease-in-out),
+      border-radius .24s var(--ds-ease-out, ease-in-out),
+      box-shadow .24s var(--ds-ease-out, ease-in-out),
+      padding-top .24s var(--ds-ease-out, ease-in-out) !important;
+  }
+  /* User-opened preview sheet (frame marker, set on file-row tap). */
+  [data-mobile-nav="frame"][data-aionui-preview-open] [data-aionui-preview-col] {
+    visibility: visible !important;
+  }
+  /* The Files action opens the explorer sheet (frame marker). */
+  [data-mobile-nav="frame"][data-aionui-explorer-open] [data-aionui-explorer-col] {
+    visibility: visible !important;
+  }
+  /* While the preview sheet is up, the explorer sheet yields (two stacked
+     bottom sheets would read as one broken overlay). Closing the preview
+     via its collapse chevron / tab close clears the marker, and the
+     explorer sheet returns. Same specificity as the explorer-open rule, so
+     this must stay AFTER it. */
+  [data-mobile-nav="frame"][data-aionui-preview-open] [data-aionui-explorer-col] {
+    visibility: hidden !important;
+  }
+  /* The open drawer must never sit under a sheet: while the frame is in the
+     narrow-expanded state both sheets yield (later in the file than the
+     open marker rule, so it wins at equal specificity). The fullscreen
+     toggle has its own drawer-open rule at the end of its section. */
+  [data-mobile-nav="frame"]:not([data-sidebar-collapsed]) [data-aionui-explorer-col],
+  [data-mobile-nav="frame"]:not([data-sidebar-collapsed]) [data-aionui-preview-col] {
+    visibility: hidden !important;
+    display: none !important;
+  }
+  /* The suite's own expand button reads the store state we bypass on
+     mobile — hide it; the header Files action is the opener. */
+  .aionui-floating-expand {
+    display: none !important;
+  }
+
+  /* Preview sheet fullscreen toggle (issue #8): a fixed button parked in the
+     sheet's titlebar row, just left of the suite's collapse chevron (24px at
+     right:8px of the sheet, and the sheet spans 8px..(100vw-8px)). The top
+     calc mirrors the sheet geometry above (bottom 40px + min(50dvh, 420px));
+     when the frame carries "data-mobile-preview-full" the sheet goes
+     fullscreen and the button moves to the viewport corner. */
+  [data-mobile-nav="preview-full-toggle"] {
+    position: absolute !important;
+    right: 36px !important;
+    top: 8px !important;
+    z-index: 57 !important;
+    display: none !important;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--aion-text-secondary, var(--dsw-alias-label-secondary, inherit));
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    /* Native look: same size/radius/hover language as the suite's tab-bar
+       icon buttons (the 20px panelCollapse next to it). The button lives
+       INSIDE the preview column, so it rides the sheet's own open
+       animation and geometry transition — no curve matching needed. */
+    transition: background-color .15s, top .24s var(--ds-ease-out, ease-in-out);
+  }
+  [data-mobile-nav="preview-full-toggle"]:hover {
+    background: var(--aion-bg-3, rgba(0, 0, 0, .22));
+  }
+  [data-mobile-nav="preview-full-toggle"]:active {
+    background: var(--aion-bg-active, rgba(0, 0, 0, .28));
+  }
+  [data-mobile-nav="preview-full-toggle"]:focus-visible {
+    outline: 2px solid var(--dsw-alias-state-business-primary, #4f6ef7);
+    outline-offset: 2px;
+  }
+  [data-mobile-nav="preview-full-toggle"] svg {
+    width: 14px;
+    height: 14px;
+  }
+  /* Keep the last tab (and the "+" URL-tab trigger) from sliding under the
+     fullscreen toggle: reserve the right end of the preview tab row. */
+  [data-aionui-preview-col] [class$="_tabScroll"] {
+    padding-right: 34px !important;
+  }
+  /* Visible only while the preview sheet is open. Visibility itself is
+     inherited from the column, so the sheet's own hide rules (collapse,
+     drawer open) cover the button too. */
+  [data-mobile-nav="frame"][data-aionui-preview-open] [data-aionui-preview-col] [data-mobile-nav="preview-full-toggle"] {
+    display: inline-flex !important;
+  }
+  /* Icon swap on the frame fullscreen marker. */
+  [data-mobile-nav="preview-full-toggle"] .dsh-mobile-nav-full-out {
+    display: none !important;
+  }
+  [data-mobile-nav="frame"][data-mobile-preview-full] [data-aionui-preview-col] [data-mobile-nav="preview-full-toggle"] .dsh-mobile-nav-full-in {
+    display: none !important;
+  }
+  [data-mobile-nav="frame"][data-mobile-preview-full] [data-aionui-preview-col] [data-mobile-nav="preview-full-toggle"] .dsh-mobile-nav-full-out {
+    display: inline !important;
+  }
+  /* Fullscreen preview: the sheet fills the whole viewport (notch included);
+     the safe-area padding drops the titlebar row below the status bar, and
+     the toggle follows the titlebar into the top corner. */
+  [data-mobile-nav="frame"][data-aionui-preview-open][data-mobile-preview-full] [data-aionui-preview-col] {
+    inset: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    height: 100dvh !important;
+    max-height: none !important;
+    box-sizing: border-box !important;
+    padding-top: var(--mnav-sat) !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    z-index: 57 !important;
+    animation: none !important;
+  }
+  /* Fullscreen: the column fills the viewport, so the button follows the
+     titlebar row down below the notch. */
+  [data-mobile-nav="frame"][data-mobile-preview-full] [data-aionui-preview-col] [data-mobile-nav="preview-full-toggle"] {
+    top: calc(var(--mnav-sat) + 8px) !important;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-aionui-preview-col],
+    [data-mobile-nav="preview-full-toggle"] {
+      transition: none !important;
+      animation: none !important;
+    }
+  }
+
+  /* dsh-web-ui sidebar entries (task board / ssh) sit flush against each
+     other — give the injected rows breathing room. */
+  button[data-dsh-taskboard-entry],
+  button[data-dsh-ssh-entry] {
+    margin-bottom: 8px !important;
+  }
+
+  /* Task board: five kanban columns at minmax(0,1fr) crush into ~78px phone
+     strips. Give every column a usable minimum and let the row scroll. */
+  [data-dsh-taskboard-board] > [class$="_columns"] {
+    grid-template-columns: repeat(5, minmax(240px, 1fr)) !important;
+    overflow-x: auto !important;
+  }
+  /* The floating button must not float over a takeover panel (task board /
+     ssh own the center column while active). */
+  html[data-dsh-taskboard-active] [data-mobile-nav="fab"],
+  html[data-dsh-ssh-active] [data-mobile-nav="fab"],
+  html[data-dsh-taskboard-active] [data-mobile-nav="backdrop"],
+  html[data-dsh-ssh-active] [data-mobile-nav="backdrop"] {
+    display: none !important;
+  }
+  /* Board header: let the search field take the slack instead of squeezing
+     the action buttons. */
+  [data-dsh-taskboard-board] > [class$="_boardHeader"] [class$="_search"] {
+    flex: 1 1 auto !important;
+    min-width: 80px !important;
+  }
+
+  /* ---------- dsh-web-ui polish: plugin market search ----------
+     The market tab row (Discover / Themes / Installed + the plugin search
+     box) is a no-wrap flex: at 390px the tabs plus the ~218px search box
+     (~475px total) overflow the ~334px sheet and the search box runs off
+     the right edge of the screen (it also forces a horizontal scrollbar on
+     the sheet's options area). Let the row wrap: the tabs keep the first
+     line and the search box gets its own full-width second line. */
+
+  [aria-modal="true"] [class$="_tabs"] {
+    flex-wrap: wrap !important;
+    row-gap: 8px !important;
+  }
+  [aria-modal="true"] [class$="_searchInline"] {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* ---------- dsh-usage-stats polish: usage & balance panel ----------
+     The panel's stats row shows three token counters side by side
+     (today / month / total). The counters use tabular nowrap figures whose
+     min-content width overflows the ~336px panel body on a phone: figures
+     clip at the row's edges and the panel grows a horizontal scrollbar.
+     Stack the three counters vertically — full-width rows, so the figures
+     always fit. */
+
+  [class*="usg_"][class$="_statsRow"] {
+    flex-direction: column !important;
+  }
+  [class*="usg_"][class$="_stat"] {
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* ---------- dsh-web-ui polish: settings sheet ----------
+     The official dialog is a desktop two-column form; on a phone the
+     label/control split leaves a huge dead gap and long descriptions wrap
+     into tall stacks. Stack each row (text above, control full-width) and
+     keep the nav tabs on ONE horizontally scrolling row. */
+
+  /* Nav tabs: single scrolling row instead of the 3-per-row grid — seven
+     categories wrap into three rows on a phone (~130px of sheet height);
+     one row with a thin scrollbar keeps every tab reachable and returns
+     that space to the options area (user feedback 2026-08-16). An earlier
+     one-row attempt had no scroll affordance and silently cut the last
+     tab off; the thin scrollbar IS the affordance. Scoped to the frame
+     marker: the desktop dialog keeps its official vertical nav column. */
+  [data-mobile-nav="frame"] [aria-modal="true"]:has(> :first-child > :last-child > button):not(:has([role="navigation"])):not(:has([class*="ZuhsRW"])) > :first-child [class$="_navList"] {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    gap: 6px !important;
+    width: 100% !important;
+    scrollbar-width: thin !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  /* Hairline scrollbar for the tab row: the default WebKit scrollbar reads
+     fat on a phone; 2px keeps the scroll affordance without the bulk. */
+  [data-mobile-nav="frame"] [aria-modal="true"] [class$="_navList"]::-webkit-scrollbar {
+    height: 2px !important;
+  }
+  [data-mobile-nav="frame"] [aria-modal="true"] [class$="_navList"]::-webkit-scrollbar-thumb {
+    background: var(--dsw-alias-border-l2, rgba(0, 0, 0, .22)) !important;
+    border-radius: 1px !important;
+  }
+  [data-mobile-nav="frame"] [aria-modal="true"] [class$="_navList"]::-webkit-scrollbar-track {
+    background: transparent !important;
+  }
+  [data-mobile-nav="frame"] [aria-modal="true"] [class$="_navCell"] {
+    flex: 0 0 auto !important;
+    white-space: nowrap !important;
+    padding: 6px 8px !important;
+    gap: 6px !important;
+    font-size: 13px !important;
+    justify-content: flex-start !important;
+  }
+  [data-mobile-nav="frame"] [aria-modal="true"] [class$="_navCell"] svg {
+    width: 14px !important;
+    height: 14px !important;
+    flex: none !important;
+  }
+  /* Content toolbar: the "Open configuration file" button is hidden on
+     mobile — it is rarely needed on a phone and steals ~180px from the
+     tab row's scroll area (user feedback 2026-08-16). Only the close ✕
+     stays, flush right in the nav row. Desktop untouched (frame scoped). */
+  [data-mobile-nav="frame"] [aria-modal="true"] [class$="_header"] [class$="_actions"] {
+    display: none !important;
+  }
+  [data-mobile-nav="frame"] [aria-modal="true"] [class$="_header"] [class$="_actions"] [class$="_action"] {
+    font-size: 13px !important;
+    padding: 6px 12px !important;
+    min-height: 0 !important;
+  }
+  /* Setting rows: text on top, control below at full width. */
+  [aria-modal="true"] [class$="_section"] [class$="_row"] {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+  [aria-modal="true"] [class$="_section"] [class$="_row"] > :first-child {
+    width: 100% !important;
+    max-width: none !important;
+  }
+  [aria-modal="true"] [class$="_section"] [class$="_row"] > :last-child {
+    width: 100% !important;
+    max-width: none !important;
+  }
+  /* Appearance mode group: give the cube row a consistent bordered
+     segmented look (the official borders differ per state). */
+  [aria-modal="true"] [class$="_cubeRow"] > * {
+    border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, .12)) !important;
+  }
+
+  /* ---------- dsh-web-ui polish: explorer sheet ----------
+     The aionui explorer was designed for a desktop side column: compact the
+     header, search box and tree rows so a phone shows more entries, and pad
+     the scroll bottom so the last row never sits flush on the edge. */
+
+  [data-aionui-explorer-col] [class$="_tabBar"] {
+    height: 36px !important;
+  }
+  [data-aionui-explorer-col] [class$="_tabBtn"],
+  [data-aionui-explorer-col] [class$="_tabBtnActive"] {
+    padding: 0 12px !important;
+    font-size: 13px !important;
+  }
+  [data-aionui-explorer-col] [class$="_searchBox"] {
+    height: 32px !important;
+    font-size: 13px !important;
+  }
+  [data-aionui-explorer-col] [class*="_treeRow"] {
+    height: 30px !important;
+    font-size: 13px !important;
+  }
+  [data-aionui-explorer-col] [class*="_treeRow"] svg {
+    width: 14px !important;
+    height: 14px !important;
+  }
+  [data-aionui-explorer-col] [class$="_scrollArea"] {
+    padding-bottom: 28px !important;
+  }
+
+  /* ---------- dsh-web-ui polish: drawer footer ----------
+     The injected footer actions (Files + Session log) become two equal pill
+     buttons instead of text-width capsules. */
+
+  /* The official footerActions row also hosts the remote-web-ui entry
+     row (two icon buttons); without wrapping the two groups squeeze each
+     other on one line. Wrap so each group gets its own full-width row. */
+  [data-mobile-nav="frame"] [class$="_footerActions"] {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+  [data-mobile-nav="drawer-actions"] {
+    width: 100% !important;
+  }
+  [data-mobile-nav="drawer-actions"] > button {
+    flex: 1 1 0 !important;
+    padding: 0 8px !important;
+    white-space: nowrap !important;
+  }
+
+  /* ---------- dsh-web-ui polish: floating pet ----------
+     The whale-girl pet (dsh-pet) floats at the viewport corner with a
+     persisted, draggable position. On phones the pet is scaled down so
+     it does not dominate the screen; the plugin's own drag + persist
+     still work (the position itself is left alone — the mobile default
+     position is seeded via the pet API to just above the composer). */
+
+  body > [class$="_float"]:has([class$="_sprite"][role="button"]) {
+    transform: scale(.66);
+    transform-origin: bottom right;
+  }
+  /* While a modal dialog (settings sheet / export) owns the screen the pet
+     floats ABOVE it and covers the dialog content; modal semantics say the
+     background is inert, so hide the pet for the modal's lifetime. */
+  body:has([aria-modal="true"]) > [class$="_float"]:has([class$="_sprite"][role="button"]) {
+    display: none !important;
+  }
+
+  /* ---------- conversation stats line ----------
+     The official session-status row (turns / steps / LLM time / TTFT /
+     cache) is long. It is the single entry the official StatsLine puts in
+     conversation.composer.dock, so the structural anchor below reaches it
+     without any DOM marking (S3 deleted the text-matching effect that used
+     to set [data-slot="conversation.composer.dock"] > [class$="_root"]). Layout: ONE fixed-height (28px) flex
+     strip that scrolls horizontally — the full metrics stream stays
+     reachable by swiping, the row never grows vertically, no ellipsis or
+     fade, 12px gaps between metric groups, a 2px scrollbar as the swipe
+     affordance. The phone breakpoint hides the strip outright instead
+     (styles/composer.css.ts — its data moves into the session info card). */
+
+  [data-slot="conversation.composer.dock"] > [class$="_root"] {
+    display: flex !important;
+    flex-flow: row nowrap !important;
+    align-items: center !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    height: 28px !important;
+    min-height: 28px !important;
+    max-height: 28px !important;
+    box-sizing: border-box !important;
+    white-space: nowrap !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin !important;
+    scrollbar-color: var(--dsw-alias-border-l1, rgba(0, 0, 0, .28)) transparent !important;
+    padding: 0 0 4px !important;
+    line-height: 20px !important;
+    font-size: 12px !important;
+  }
+  [data-slot="conversation.composer.dock"] > [class$="_root"]::-webkit-scrollbar {
+    height: 2px !important;
+  }
+  [data-slot="conversation.composer.dock"] > [class$="_root"]::-webkit-scrollbar-thumb {
+    background: var(--dsw-alias-label-tertiary, rgba(0, 0, 0, .3)) !important;
+    border-radius: 2px !important;
+  }
+  [data-slot="conversation.composer.dock"] > [class$="_root"]::-webkit-scrollbar-track {
+    background: transparent !important;
+  }
+  [data-slot="conversation.composer.dock"] > [class$="_root"] > * {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    flex-flow: row nowrap !important;
+    align-items: center !important;
+    width: max-content !important;
+    min-width: max-content !important;
+    max-width: none !important;
+    white-space: nowrap !important;
+    margin-right: 12px !important;
+    padding: 0 !important;
+  }
+  [data-slot="conversation.composer.dock"] > [class$="_root"] > *:last-child {
+    margin-right: 0 !important;
+  }
+  [data-slot="conversation.composer.dock"] > [class$="_root"] * {
+    white-space: nowrap !important;
+  }
+
+  /* ---------- dsh-genui panel dock ----------
+     The genui panel docks above the composer (conversation.input.dock,
+     id genui-panel). On a phone its business-blue outline, generous chrome
+     and single-line ellipsis read as an unfinished artifact: long titles
+     truncate mid-word ("…default b···") with the chevron glued to the
+     ellipsis, and the pill crowds the composer. Mobile treatment: neutral
+     card border matching the composer, tighter chrome so the full title
+     fits, chevron with breathing room. Scoped to the mobile frame marker —
+     desktop keeps genui's own styling untouched. */
+
+  [data-mobile-nav="frame"] [data-genui-panel] {
+    margin: 6px 12px 4px !important;
+    border-color: var(--dsw-alias-border-l1, rgba(0, 0, 0, .12)) !important;
+    border-radius: 12px !important;
+  }
+  [data-mobile-nav="frame"] [data-genui-panel] [class*="_panelToggle"] {
+    padding: 7px 12px !important;
+    gap: 8px !important;
+  }
+  [data-mobile-nav="frame"] [data-genui-panel] [class*="_panelBadge"] {
+    padding: 0 7px !important;
+    border-radius: 5px !important;
+    font-size: 10.5px !important;
+    line-height: 1.7 !important;
+  }
+  [data-mobile-nav="frame"] [data-genui-panel] [class*="_panelTitle"] {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    font-size: 12.5px !important;
+    line-height: 1.45 !important;
+  }
+  [data-mobile-nav="frame"] [data-genui-panel] [class*="_panelChevron"] {
+    flex: none !important;
+    margin-left: 0 !important;
+    padding-left: 4px !important;
+  }
+
+  /* ---------- git-graph branch chip: inside the composer card ----------
+     The branch chip (conversation.input.dock) floats between the dock rows
+     and the input card; on a phone it reads as a stray capsule crowding the
+     composer. A client effect (MobileNavOverlay) reparents the chip INTO
+     the composer card; these rules pin it to the card's top-left and give
+     the card a dedicated chip row. The card is position: relative by the
+     official stylesheet, so the absolute anchor resolves against it. The
+     plugin's own sheet sets all four offsets on the anchor, so right/bottom
+     must be neutralized too. Scope is the frame marker + the anchor
+     attribute (NOT the dock slot — the reparenting moves the chip out of
+     the dock's subtree). Desktop untouched: the frame marker only exists
+     below 1024px, and the effect restores the chip to the dock when the
+     viewport widens. Chip row geometry (2026-08-16, user feedback): 48px
+     padding left a 16px dead gap between the chip and the input line and
+     made the composer read too tall; the row is now 40px = chip (24px) at
+     top 12px + ~4px to the textarea — the chip sits slightly lower and
+     the gap is compressed without touching the official height budget
+     further. */
+
+  [data-mobile-nav="frame"] [data-gitgraph-chip-anchor] {
+    position: absolute !important;
+    top: 12px !important;
+    left: 12px !important;
+    right: auto !important;
+    bottom: auto !important;
+    z-index: 1 !important;
+  }
+  [data-mobile-nav="frame"] [class$="_card"]:has([data-gitgraph-chip-anchor]) {
+    padding-top: 40px !important;
+  }
+
+  /* ---------- dsh-better-sidebar: safe area (S2.1, 2026-08-17) ----------
+     LEGACY — this and the two better-sidebar blocks after it (toggle-cluster
+     hide, phone close pill) are written against dsh-better-sidebar ≤ 0.18,
+     which drew its own right panel (\`_panel\` / \`_panelHidden\`, a
+     \`_toggleCluster\`). 0.19 retired that panel: its tabs live in DSH 0.1.5's
+     native right sidebar (which the host itself takes full screen on a
+     phone, with its own collapse control), and what remains plugin-owned is
+     a bottom workbench (\`_bottomPanel\`) the phone never opens. Every
+     selector below therefore matches NOTHING on 0.19+ — by design, not by
+     accident (issue #11, verified live 2026-09-21); they stay for the older
+     combination and are inert otherwise, like every other compat rule here.
+     THIRD-PARTY COMPAT RULE — dsh-better-sidebar (the workbench the session
+     header's panel button opens). Its shell is viewport-fixed and starts at
+     y=0: the panel at inset 0 (100vw drawer below 768px, a right column
+     above it) and the toggle cluster at top:3px. Neither knows about
+     env(safe-area-inset-*), so on a notched iPhone the whole tab strip —
+     including the one button that CLOSES the panel — sits behind the status
+     bar and cannot be tapped: the user opened the workbench and was stuck
+     there (real-device report, 2026-08-17).
+     Applied across the plugin's whole mobile band, not just <768px: the
+     panel is fixed at top:0 in the 768-1023px range too, so the same notch
+     covers the same tab strip. Zero effect wherever the inset is 0 (every
+     desktop browser, every non-notched device) — desktop is >=1024px and
+     out of this media block entirely.
+     Anchors: the plugin's own mount marker [data-dsh-better-sidebar]
+     (index.tsx) plus class-suffix selectors, per this repo's hashed-class
+     convention. --dsh-title-bar-strip is the plugin's own title-bar-compat
+     offset (set only while that mode is on, 0px fallback otherwise): adding
+     to it keeps both offsets rather than clobbering theirs.
+     !important because their :global(body[...]) rules outrank a plain
+     attribute selector.
+     No box-sizing here on purpose: the panel is position:fixed with BOTH
+     top and bottom set, so its used height already resolves to
+     "containing block - insets - padding - border" (CSS 2.1 10.6.4) and the
+     padding shrinks the content box without any help. Forcing border-box
+     also folds their 1px left border into the inline width — measured as a
+     1px panel-width change at 768px, i.e. a regression outside this
+     hotfix's remit. */
+  [data-dsh-better-sidebar] [class$="_panel"],
+  [data-dsh-better-sidebar] [class$="_panelHidden"] {
+    padding-top: calc(var(--mnav-sat) + var(--dsh-title-bar-strip, 0px)) !important;
+  }
+  /* Only the tablet/desktop range still shows the cluster (see the hide
+     rule below) — the notch offset is now dead weight below 768px, so it
+     is scoped out rather than left applying invisibly. min-width:768px
+     rather than the more common max-width pairing: this offset was
+     already a harmless no-op at >=1024px before S3.1 (--mnav-sat is 0 on
+     every desktop browser), so narrowing its floor to 768px changes
+     nothing there either — it only stops evaluating on phone. */
+  @media (min-width: 768px) {
+    [data-dsh-better-sidebar] [class$="_toggleCluster"] {
+      top: calc(var(--mnav-sat) + var(--dsh-title-bar-strip, 0px) + 3px) !important;
+    }
+  }
+
+  /* ---------- dsh-better-sidebar: hide the phone toggle cluster (S3.1, 2026-08-17) ----------
+     Real-device round 2 feedback: this fixed top-right cluster duplicates
+     — and visually overlaps — the session header's own workbench button
+     (MobileSessionHeader.tsx), which already opens/closes the same panel
+     by clicking this cluster's toggle button through. Hidden below 768px
+     only; the 768-1023px tablet range has no workbench button (header.css.ts
+     scopes that entire reflow to <768px) and still depends on this cluster
+     as its only entry point, so it stays exactly as v1.0.0/S2.1 shipped it
+     there. The cluster also holds the panel's own close affordance — see
+     [data-mobile-nav="better-sidebar-close"] below for the phone
+     replacement, wired up in MobileSessionHeader.tsx. */
+  @media (max-width: 767px) {
+    [data-dsh-better-sidebar] [class$="_toggleCluster"] {
+      display: none !important;
+    }
+  }
+
+  /* ---------- dsh-better-sidebar: phone close button (S3.1 follow-up, 2026-08-17) ----------
+     Appended to document.body by MobileSessionHeader.tsx's
+     MobileHeaderUtilities effect — never inside the panel's own subtree
+     (the third party's React re-renders would wipe it) and never under any
+     transformed/backdrop-filter ancestor (the S4 info-card WebKit lesson in
+     AGENTS.md: position:fixed re-anchors to the nearest such ancestor
+     instead of the viewport). Default hidden — belt-and-braces, same
+     reasoning as header.css.ts's [data-mobile-nav="header-info"] etc list:
+     React does not know about media queries. Shown only below 768px AND
+     only while the panel is actually open: the panel's own class name ends
+     in "_panel" exclusively in the open state (the "_panelHidden" suffix is
+     appended once closed, so the string no longer ends in "_panel") — a
+     pure-CSS :has() open/closed read, no MutationObserver required.
+
+     Bottom-center pill, not a top-right circle (real-device follow-up,
+     2026-08-17): a top-right position collided with the panel's own
+     per-tab toolbar controls — measured live at 390px with the explorer
+     tab open, the panel's Refresh button sits at x:354-382 y:93-121, and a
+     44px circle at top:8px+safe-area/right:8px lands at x:338-382
+     y:(safe-area+8)-(safe-area+52), a direct overlap once the safe-area
+     offset is small (or zero on non-notched phones). Every per-tab toolbar
+     (explorer/git/tabBar) lives at the panel's TOP; nothing in the
+     default explorer or git tabs reaches the bottom 90px of the viewport
+     (checked live, both tabs, 2026-08-17), so bottom-center is clear
+     regardless of which tab is open — one fixed position that does not
+     need per-tab-type coordinates to dodge. */
+  /* Default-hidden for this pill lives in header.css.ts, NOT here: this
+     whole file sits inside the shared (max-width: 1023px) block, so a rule
+     here can never hide anything at desktop widths (learned the hard way,
+     2026-08-17 desktop leak). */
+  @media (max-width: 767px) {
+    body:has([data-dsh-better-sidebar] [class$="_panel"]) [data-mobile-nav="better-sidebar-close"] {
+      display: flex !important;
+      position: fixed;
+      left: 50%;
+      bottom: calc(var(--mnav-sab) + 12px);
+      transform: translateX(-50%);
+      z-index: 70;
+      align-items: center;
+      gap: 6px;
+      height: 44px;
+      padding: 0 18px;
+      border: none;
+      border-radius: 999px;
+      background: var(--dsw-alias-bg-base, #fff);
+      /* Drop shadow alone does not draw an edge: the fill is bg-base, which in
+         dark theme is the same colour as the surface behind it, and a black
+         shadow on a dark ground is invisible — the pill read as floating text
+         with no boundary. The inset hairline is the edge; the drop shadow only
+         lifts it. Same token the session rows use for their dark-mode ring. */
+      box-shadow:
+        inset 0 0 0 1px var(--dsw-alias-border-l2, rgba(0, 0, 0, .14)),
+        0 4px 16px rgba(0, 0, 0, .2);
+      color: var(--dsw-alias-label-primary, inherit);
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body:has([data-dsh-better-sidebar] [class$="_panel"]) [data-mobile-nav="better-sidebar-close"] svg {
+      width: 14px;
+      height: 14px;
+      flex: none;
+    }
+    body:has([data-dsh-better-sidebar] [class$="_panel"]) [data-mobile-nav="better-sidebar-close"]:active {
+      background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, .06));
+    }
+  }
+
+  /* ---------- dsh-agent-teams: phone floater reposition (2026-08-18) ----------
+     THIRD-PARTY COMPAT RULE — @nanmicoder/dsh-agent-teams (the AgentTeams
+     activity floater: a collapsed badge + expandable panel, body-portaled
+     under its own mount marker div[data-agent-teams-host]). Its own CSS
+     fixes both at top:56px (<=640px) viewport coordinates and never reads
+     env(safe-area-inset-*), so on a notched iPhone the badge lands INSIDE
+     the safe-area + this plugin's 76px session header band — overlapping
+     the info and workbench buttons (real-device report, 2026-08-18).
+     Move both below the header instead: safe-area + 76px header chrome
+     (48px title row + 28px view-switch row, header.css.ts) + 8px gap.
+     Anchored on the plugin's own mount marker + class-suffix selectors per
+     this repo's hashed-class convention — when dsh-agent-teams is not
+     installed the marker never exists and this whole section is inert
+     (same presence-gating as the dsh-better-sidebar rules above).
+     !important because their positions come from html-level CSS vars
+     (--agent-teams-panel-top et al.) whose style tag order vs ours is not
+     guaranteed. z-index: their 2147483000 would float the badge over every
+     one of this plugin's own overlays (drawer 40, info sheet 55-57, close
+     pill 70); 30 keeps it above content but below all of them. */
+  @media (max-width: 767px) {
+    [data-agent-teams-host] [class$="_badge"],
+    [data-agent-teams-host] [class$="_panel"] {
+      top: calc(var(--mnav-sat) + 84px) !important;
+      right: 10px !important;
+      z-index: 30 !important;
+    }
+    [data-agent-teams-host] [class$="_panel"] {
+      left: 10px !important;
+      width: auto !important;
+      /* Their min-height:min(560px, calc(100dvh - 56 - 56)) resolves against
+         the OLD top var — on short phones it exceeds the space left below
+         the moved-down top edge and would force overflow; content-sized with
+         a hard cap replaces it. 76px bottom clearance keeps the collapsed
+         composer's top edge visible under the panel. */
+      min-height: 0 !important;
+      max-height: calc(100dvh - var(--mnav-sat) - 84px - var(--mnav-sab) - 76px) !important;
+    }
+    /* The floater belongs to the SESSION page: on the home list it hovered
+       over the session rows (user feedback, 2026-08-18). The phone page
+       stack is this plugin's own overlay — the official conversation (and
+       with it the floater's "current session") stays mounted underneath, so
+       agent-teams keeps rendering it; hide it whenever the home level is the
+       visible one (data-view flips to "session" inside a session, and the
+       badge/panel come right back). :has() is already a documented
+       requirement of this plugin (Chromium 105+, docs/interface.md). */
+    body:has([data-mobile-nav="home"][data-view="home"]) [data-agent-teams-host] [class$="_badge"],
+    body:has([data-mobile-nav="home"][data-view="home"]) [data-agent-teams-host] [class$="_panel"] {
+      display: none !important;
+    }
+  }
+
+  /* ---------- dsh-at-file compatibility ----------
+     dsh-at-file registers its own \`conversation.input.dock\` entry
+     ([data-at-file-dock]) and renders one row per \`@path\` token in the
+     draft. That is exactly the same source this plugin's attachment chips
+     read, so on a phone a single uploaded image produced TWO entries on the
+     composer rail: our 48px thumbnail tile AND at-file's file-name row for
+     the same token (reported 2026-08-22).
+
+     Drop at-file's row for the upload directory only. Everything else the
+     user @-mentions by hand is at-file's own job and stays — this is not a
+     blanket hide. The path is readable from the row's own title attribute
+     (FilesDock passes \`title={mention.relative}\`), which is a rendered
+     contract rather than a hashed class name.
+
+     Phone only, and deliberately so: at \u003e= 768px our chips are hidden by
+     composer.css.ts, which leaves at-file's row as the ONLY thing on screen
+     representing the attachment. Hiding it there would make an uploaded file
+     invisible.
+
+     When every row was an upload the container itself is left empty, and an
+     empty flex item still claims the rail's 6px gap — so the dock goes too
+     unless at least one non-upload row survives. */
+  @media (max-width: 767px) {
+    [data-at-file-dock] [data-at-file-row]:has([title^="${UPLOAD_DIR}/"]) {
+      display: none !important;
+    }
+    [data-at-file-dock]:not(:has([data-at-file-row] [title]:not([title^="${UPLOAD_DIR}/"]))) {
+      display: none !important;
+    }
+  }
+  /* ---------- @ace-zone/dsh-market: modal header fits a phone (2026-08-22) ----------
+     THIRD-PARTY COMPAT RULE — @ace-zone/dsh-market (the plugin market:
+     a settings-page entry that opens its own body-level modal,
+     .dshm-overlay > .dshm-panel, over the settings sheet).
+
+     Its header (.dshm-head) is a plain flex row with no wrapping and no
+     shrinking: title, a badge strip whose slogan is white-space:nowrap,
+     a version chip, an "official site" link, a language toggle, and only
+     then the × that closes the modal. Flex items default to
+     min-width:auto, so at phone widths the row keeps its intrinsic size,
+     .dshm-panel clips it (overflow:hidden), and the × — the only way out
+     of the modal on a touch screen, which has no Esc key — is off screen
+     (reported 2026-08-22).
+
+     Drop the three decorative items and let the title ellipsis instead.
+     The language toggle stays: it is a real control, and title + toggle +
+     × fit inside 320px once the title can shrink. The title rule also
+     covers the job / help overlays, which reuse .dshm-head with a long
+     "<action> · <package>" title and no flexible item of their own.
+     Nothing here is desktop-side: at >= 768px the row has the width it
+     was written for. */
+  @media (max-width: 767px) {
+    body:has(${MARKET}) .dshm-head > .dshm-head-badges,
+    body:has(${MARKET}) .dshm-head > .dshm-ver,
+    body:has(${MARKET}) .dshm-head > a.dshm-viewbtn {
+      display: none !important;
+    }
+    body:has(${MARKET}) .dshm-head > .dshm-title {
+      flex: 1 1 auto !important;
+      min-width: 0 !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+    }
+    /* 44px touch target: their 20px glyph in 2px/6px padding is ~30px. */
+    body:has(${MARKET}) .dshm-head > .dshm-close {
+      flex: 0 0 auto !important;
+      font-size: 24px !important;
+      padding: 6px 12px !important;
+    }
+  }
+
+  /* ---------- dsh-auto-approve compatibility ----------
+     The composer.css.ts phone rules collapse the permission trigger to an
+     icon-only pill, but the official permissionGlyphs table only draws
+     icons for read-only / workspace-write — the auto-approve plugin's
+     "auto" preset gets none, so its pill showed a bare chevron. The plugin
+     injects its shield+sparkle svg into the MENU items itself (DOM,
+     content-anchored), but the collapsed TRIGGER re-renders on every
+     preset change, so a CSS pseudo-element is the survives-re-render fix
+     (same reasoning as the old model Sparkle ::before above).
+
+     Presence gates, honestly stated (2026-08-25 review):
+     - Trigger rule: aria-label is t('input.accessMode', {name}) with the
+       raw preset display name embedded untranslated and (zh/en verified)
+       at the END of the string — [aria-label$="Auto"] matches exactly the
+       auto-approve preset being selected, and cannot match a future
+       "Autopilot"-style preset. Plugin absent → the name never renders →
+       inert. This is a DIRECT gate on the plugin's own preset name.
+     - Menu-item rule: INDIRECT gate only. It matches "permission-menu item
+       without an official icon span"; the official three presets all ship
+       icon spans in the menu (verified live), so with the plugin absent
+       nothing matches. Known boundary: another plugin's icon-less preset,
+       or a host redesign dropping icon spans, would wrongly receive this
+       shield. A direct gate is not possible: menu items carry no
+       id/data attributes to anchor on, CSS cannot match text, and gating
+       on the plugin's own JS-injected markers would kill this fallback in
+       exactly the JS-did-not-run case it exists for. Paths are the plugin's own
+     shield outline + four-point sparkle (permission-glyph.ts), stroke
+     shield + filled sparkle, drawn as a currentColor mask. */
+  @media (max-width: 767px) {
+    /* Fallback for the MENU items too (real-phone report 2026-08-25: the
+       plugin's DOM injection did not run in that page instance while this
+       CSS did — bundle load timing differs per plugin). Any permission-menu
+       item WITHOUT the official icon span gets the shield drawn by CSS;
+       today that is exactly the plugin "auto" preset (the official three
+       all ship icons in the menu). Self-coordinating with the plugin's own
+       injection: once its svg lands it arrives inside a cloned icon span,
+       the :not() stops matching, no double icon. */
+    [data-slot="conversation.composer.bar"] [class$="_card"] > [class$="_row"] > [class$="_tools"] > [class$="_modes"] [role="menu"] button[role="menuitem"]:not(:has([class*="_itemIcon_"]))::before,
+    [data-slot="conversation.composer.bar"] [class$="_card"] > [class$="_row"] > [class$="_tools"] > [class$="_modes"] button[class$="_trigger"][aria-label$="Auto"]::before {
+      content: '';
+      width: 16px;
+      height: 16px;
+      flex: none;
+      background: currentColor;
+      -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8.20554 0.899994L14.7901 3.36857V7.01026C14.7901 12 11.0466 14.2103 8.20554 15.3C5.36446 14.2103 1.62012 12 1.62012 7.01026V3.36857L8.20554 0.899994Z' fill='none' stroke='black' stroke-width='1.31831' stroke-linejoin='round'/%3E%3Cpath d='M8.35 5.4C8.35 7.2 7.15 8.4 5.35 8.4C7.15 8.4 8.35 9.6 8.35 11.4C8.35 9.6 9.55 8.4 11.35 8.4C9.55 8.4 8.35 7.2 8.35 5.4Z'/%3E%3C/svg%3E");
+      mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8.20554 0.899994L14.7901 3.36857V7.01026C14.7901 12 11.0466 14.2103 8.20554 15.3C5.36446 14.2103 1.62012 12 1.62012 7.01026V3.36857L8.20554 0.899994Z' fill='none' stroke='black' stroke-width='1.31831' stroke-linejoin='round'/%3E%3Cpath d='M8.35 5.4C8.35 7.2 7.15 8.4 5.35 8.4C7.15 8.4 8.35 9.6 8.35 11.4C8.35 9.6 9.55 8.4 11.35 8.4C9.55 8.4 8.35 7.2 8.35 5.4Z'/%3E%3C/svg%3E");
+      -webkit-mask-size: contain;
+      mask-size: contain;
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+    }
+  }
+
+  /* ---------- dsh-vision-router: composer vision toggle (2026-08-26) ----------
+     THIRD-PARTY COMPAT RULE — dsh-vision-router registers a Vision mode
+     toggle into conversation.input.right (slot id
+     "vision-router-mode-toggle"): a bordered pill sized by INLINE styles —
+     minHeight 28, padding 4px 8px, fontSize 12, white-space nowrap —
+     roughly 90px of unshrinkable width.
+
+     Its children changed shape in 2.1.x (re-measured on the real UI
+     2026-09-04, plugin 2.1.1). Both forms are handled:
+       - text form (<= 2.0.x): <span>👁</span><span>label</span> plus a
+         <span>✓</span> while active;
+       - svg form (2.1.x, lib/client-presentation-boundary.js): a 14px eye
+         <svg>, <span>label</span>, plus a SECOND 12px check <svg> while
+         active.
+     The 2.1.1 update is what the user hit: the label span was still hidden
+     but the new eye svg was not, so it rendered NEXT TO our ::before eye —
+     two eyes in a 28px button — and the active check svg had nothing hiding
+     it at all, eating width the phone row does not have.
+
+     The phone composer row is nowrap by design (composer.css.ts section 1)
+     and the model seat is its only shrinkable item, so that pill squeezes
+     the model name out of the row (user report, 2026-08-26).
+
+     Phone treatment: a 28x28 round icon button in the attach button's
+     language (same size, same neutral fill), showing exactly ONE 16px eye
+     and nothing else. Every span is hidden (label, and the text form's
+     emoji and check); of the svg form's icons only the first survives, the
+     trailing check svg is hidden by a sibling combinator so the count is
+     never assumed. Our own ::before eye is now a FALLBACK, gated on
+     :has(svg) so it draws only for the text form — the plugin ships its own
+     icon from 2.1.x on, and drawing over it is what produced the double
+     eye. Generated content rather than a DOM-injected icon, for the same
+     survives-React-re-render reason as the auto-approve shield below: the
+     button re-renders on every state flip, so an injected node would need
+     an observer while ::before does not. The
+     accessible name is unaffected: the button ships aria-label + title with
+     the full enable/disable copy, and aria-pressed keeps conveying the
+     state; visually the plugin's own inline styles still flip border +
+     background + color to the brand token while active (only the inactive
+     look is restyled to match the row).
+
+     Presence gate: [data-vision-router-mode-toggle] is rendered by the
+     plugin itself (the exact attribute from its createElement call) — with
+     the plugin absent the attribute never exists and this whole section is
+     inert, not one selector matching (same convention as the
+     dsh-better-sidebar rules). !important throughout because the geometry
+     it replaces is inline style. Phone only (max-width: 767px): desktop
+     keeps the plugin's full pill untouched, and the 768-1023px tablet row
+     has the width for it. order:5 restates composer.css.ts's generic
+     input.right rule with the same value — kept here so the toggle can
+     never fall back to order 0 (far left, before the model) if that
+     structural selector ever stops matching. */
+  @media (max-width: 767px) {
+    [data-slot="conversation.composer.bar"] [data-vision-router-mode-toggle] {
+      order: 5 !important;
+      flex: 0 0 auto !important;
+      box-sizing: border-box !important;
+      width: 28px !important;
+      min-width: 28px !important;
+      max-width: 28px !important;
+      height: 28px !important;
+      min-height: 28px !important;
+      padding: 0 !important;
+      gap: 0 !important;
+      justify-content: center !important;
+      border-radius: 999px !important;
+      touch-action: manipulation !important;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* Inactive look: neutral round fill like the attach button — the
+       plugin's own inactive state would draw a lonely outline circle that
+       reads as broken next to the row's filled icon buttons. */
+    [data-slot="conversation.composer.bar"] [data-vision-router-mode-toggle]:not([aria-pressed="true"]) {
+      border-color: transparent !important;
+      background: var(--dsw-specific-selector, rgba(127, 127, 127, .12)) !important;
+      box-shadow: none !important;
+    }
+    /* Text form: emoji + label + active check are all spans — all out. */
+    [data-slot="conversation.composer.bar"] [data-vision-router-mode-toggle] > span {
+      display: none !important;
+    }
+    /* Svg form (2.1.x): the first svg IS the eye, so keep it and match the
+       row's other icons at 16px. */
+    [data-slot="conversation.composer.bar"] [data-vision-router-mode-toggle] > svg:first-of-type {
+      width: 16px !important;
+      height: 16px !important;
+    }
+    /* ...and drop every svg after it — today that is the active-state check
+       mark. A sibling combinator rather than :nth-child(2): the count is the
+       plugin's business, this only says "one icon, the first one". */
+    [data-slot="conversation.composer.bar"] [data-vision-router-mode-toggle] > svg ~ svg {
+      display: none !important;
+    }
+    /* The one svg: eye outline + iris as a currentColor mask — brand while
+       active, dimmed with the button by the plugin's own disabled opacity. */
+    [data-slot="conversation.composer.bar"] [data-vision-router-mode-toggle]:has(svg)::before {
+      content: none !important;
+    }
+    [data-slot="conversation.composer.bar"] [data-vision-router-mode-toggle]::before {
+      content: '';
+      width: 16px;
+      height: 16px;
+      flex: none;
+      background: currentColor;
+      -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M1.5 8C3 5.2 5.3 3.5 8 3.5s5 1.7 6.5 4.5c-1.5 2.8-3.8 4.5-6.5 4.5S3 10.8 1.5 8Z' fill='none' stroke='black' stroke-width='1.3' stroke-linejoin='round'/%3E%3Ccircle cx='8' cy='8' r='2'/%3E%3C/svg%3E");
+      mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M1.5 8C3 5.2 5.3 3.5 8 3.5s5 1.7 6.5 4.5c-1.5 2.8-3.8 4.5-6.5 4.5S3 10.8 1.5 8Z' fill='none' stroke='black' stroke-width='1.3' stroke-linejoin='round'/%3E%3Ccircle cx='8' cy='8' r='2'/%3E%3C/svg%3E");
+      -webkit-mask-size: contain;
+      mask-size: contain;
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+    }
+    [data-slot="conversation.composer.bar"] [data-vision-router-mode-toggle]:focus-visible {
+      outline: 2px solid var(--dsw-alias-state-business-primary, #4f6ef7);
+      outline-offset: 2px;
+    }
+  }
+`

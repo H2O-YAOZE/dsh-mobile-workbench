@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {parseDocument,parseXlsx,parseDocx} from '../packages/document-reader/lib/doc-read.js';
+const require=createRequire(new URL('../packages/document-reader/package.json',import.meta.url));
+const XLSX=require('xlsx');
+const JSZip=createRequire(require.resolve('mammoth'))('jszip');
+const wb=XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['名称','数量'],['测试',2],['第三行',3]]),'合成表');
+const bytes=XLSX.write(wb,{type:'buffer',bookType:'xlsx'});
+const text=parseXlsx(bytes,2);assert(text.includes('名称\t数量'));assert(text.includes('测试\t2'));assert(!text.includes('第三行'));
+const zip=new JSZip();
+zip.file('[Content_Types].xml','<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>');
+zip.file('_rels/.rels','<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
+zip.file('word/document.xml','<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>合成文档测试</w:t></w:r></w:p></w:body></w:document>');
+assert((await parseDocx(await zip.generateAsync({type:'nodebuffer'}))).includes('合成文档测试'));
+assert.equal(await parseDocument(Buffer.from('合成文本'),'text',{sheetRowLimit:2}),'合成文本');
+assert.throws(()=>parseXlsx(Buffer.from('not a zip'),2));
+console.log('Synthetic XLSX row budget, DOCX, text and invalid ZIP checks passed; xlsx '+XLSX.version);

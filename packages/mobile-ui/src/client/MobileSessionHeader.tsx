@@ -1,0 +1,443 @@
+import { useEffect, useState } from 'react'
+import type { ReactElement } from 'react'
+import { QQ_ASSETS } from './qq-assets.ts'
+import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { IconChevronLeftOutlineRegular, IconInfoOutlineRegular, IconPanelLeftOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { SessionId, UseJobs } from './compat/types.ts'
+import { NS } from './locales.ts'
+import { GO_HOME_EVENT, SESSION_INFO_EVENT } from './nav-store.ts'
+import { BETTER_TOGGLE, readSidebarTarget, toggleSidebarTarget } from './sidebar-panels.ts'
+import type { SidebarTarget } from './sidebar-panels.ts'
+
+/*
+ * The ⓘ button used to render a hand-built info glyph because the
+ * primitives family had no info-circle icon (grepped 2026-08-17: 71
+ * icons). DSH 0.1.7 ships IconInfoOutlineRegular, so the hand-built twin
+ * is retired in favour of the official one — same 16x16 box the rest of
+ * the header icon family uses.
+ */
+
+/**
+ * Two hand-built 14px glyphs: the primitives family still has no subagent
+ * or background-task icon (re-checked against the 0.1.7-rc.2 exports).
+ * Drawn on the same 16-box with the same stroke so the activity chip
+ * reads as part of the header icon family.
+ */
+/** Three linked nodes — a parent delegating to children. */
+function IconSubagentGlyph({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="8" cy="3.2" r="2" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="3.4" cy="12.6" r="2" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="12.6" cy="12.6" r="2" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M8 5.4v2.2M8 7.6H3.4v3M8 7.6h4.6v3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+/** A clock face — work still ticking in the background. */
+function IconTaskGlyph({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="8" cy="8" r="6.1" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M8 4.4V8l2.5 1.7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+/**
+ * What the status dot says. `running` pulses blue, `done` is a steady green,
+ * `warning` covers a job that ended on request or failed — showing that as
+ * "done" green would call a failure a success.
+ */
+type ActivityState = 'running' | 'done' | 'warning'
+
+/**
+ * The official triggers our pills stand in for. Both are hidden and parked as
+ * invisible anchors at the right end of the view-switch band
+ * (styles/header.css.ts) so their popovers still mount and position from
+ * there; the pill is the visible control and forwards the tap.
+ *
+ * Told apart by `aria-haspopup`: the subagent entry declares `tree` (its menu
+ * is a session tree), the jobs entry declares none.
+ *
+ * Scoped to the HEADER, not to a slot (2026-08-21). DSH 0.1.1 moved the
+ * subagent entry out of `conversation.session.header.actions` into a new
+ * `conversation.session.header.lineage` slot inside the breadcrumb; every
+ * slot-scoped lookup here silently stopped matching and the pill fell back to
+ * opening the info card. The header is the stable boundary — which slot
+ * inside it owns the entry is the suite's business, and it has changed once.
+ *
+ * Also deliberately NOT keyed on the root's class. In 0.1.1 that attribute is
+ * `"ZKlsPq_root "` — with a TRAILING SPACE — so `[class$="_root"]` does not
+ * match it at all (`[class$=]` tests the whole attribute string). The
+ * trigger's own class has no such tail, so anchor on the trigger and reach
+ * the root through `:has()` instead of naming it.
+ */
+const HEADER = '[data-phase] header'
+const SUBAGENT_TRIGGER = `${HEADER} button[aria-haspopup="tree"]`
+const JOBS_TRIGGER = `${HEADER} button[class$="_trigger"]:not([aria-haspopup])`
+
+/** One glanceable group: icon + count + state dot; opens the official popover. */
+function ActivityPill(
+  { kind, count, state, label, trigger, onFallback, Icon }: {
+    kind: string
+    count: number
+    state: ActivityState
+    label: string
+    /** CSS selector for the official trigger this pill stands in for. */
+    trigger: string
+    /** Used when the official entry is absent — never leave a tap dead. */
+    onFallback: () => void
+    Icon: (props: { size?: number }) => ReactElement
+  },
+) {
+  if (count === 0) return null
+  return (
+    <button
+      type="button"
+      data-mobile-nav="activity-pill"
+      data-activity-kind={kind}
+      data-activity-state={state}
+      aria-label={label}
+      title={label}
+      /* Reached only when the official trigger is absent — when it exists,
+         effects/native-trigger-overlay.ts lays it transparently over this
+         pill and the tap never gets here. Scripting the official click is
+         not an option: 0.1.1 ignores synthetic events (see that file). */
+      onClick={() => {
+        if (document.querySelector(trigger) === null) onFallback()
+      }}
+    >
+      <Icon />
+      <span data-mobile-nav="activity-count">{count}</span>
+      <i data-mobile-nav="activity-dot" aria-hidden="true" />
+    </button>
+  )
+}
+
+/** Full props for the session header's back button + view-switch row. */
+export type MobileHeaderActionsProps =
+  & PropsRuntime<'conversation.session.header.actions'>
+  & PropsLocale<typeof NS>
+  & {
+    /**
+     * Job-roster hook, bound from the `jobs` service through the renderer's
+     * inject face. Always present: the binding substitutes a fixed empty
+     * source when the service is absent (see index.tsx activityInject), so
+     * this hook is called on every render and the hook count never varies.
+     */
+    useJobs: UseJobs
+    /** Keeps the session's job roster stream open while mounted (empty no-op without the service). */
+    watchRows: (sessionId: SessionId) => () => void
+  }
+
+/** One tab read off the official (now visually hidden) Chat/Trajectory tablist. */
+export interface ViewTabInfo {
+  label: string
+  active: boolean
+  el: HTMLButtonElement
+}
+
+/**
+ * Reads the official session-header tablist by role/aria only (no hashed
+ * classes) — the plan's one sanctioned official-DOM read: ChatStore's view
+ * selection has no public setter (design doc Appendix C), so switching
+ * views means clicking the official tab button ourselves.
+ *
+ * Exported: effects/gestures.ts (S6) reuses this exact read for the
+ * content-area swipe gesture instead of re-querying the tablist a second
+ * way — it runs outside React (a document-level touch listener), so it
+ * needs the plain function, not the {@link useViewTabs} hook below.
+ */
+export function readViewTabs(): ViewTabInfo[] {
+  const list = document.querySelector('header [role="tablist"]')
+  if (list === null) return []
+  return [...list.querySelectorAll<HTMLButtonElement>('[role="tab"]')].map((el) => ({
+    label: el.textContent ?? '',
+    active: el.getAttribute('aria-selected') === 'true',
+    el,
+  }))
+}
+
+/**
+ * Live view-tab mirror. The tablist mounts/unmounts with the session header
+ * and its `aria-selected` flips on every view switch (ours or the suite's
+ * own), so a MutationObserver — not a one-time read — keeps the mirror
+ * current. Scoped to `document.body` like the existing aionui-compat
+ * effects (styles/aionui-compat.ts): the tablist itself may not exist yet
+ * at mount time.
+ *
+ * Exported: MobileSessionInfo.tsx (S4) reuses this exact hook for the info
+ * sheet's Chat/Trajectory segmented control instead of re-reading the
+ * tablist a second way.
+ */
+export function useViewTabs(): ViewTabInfo[] {
+  const [tabs, setTabs] = useState<ViewTabInfo[]>(() => [])
+  useEffect(() => {
+    const sync = (): void => setTabs(readViewTabs())
+    sync()
+    const observer = new MutationObserver(sync)
+    observer.observe(document.body, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['aria-selected'],
+      childList: true,
+    })
+    return () => observer.disconnect()
+  }, [])
+  return tabs
+}
+
+/**
+ * Session header, left lane: the back button (returns the phone page stack
+ * to the session list) plus the "current view + dots" row that mirrors the
+ * hidden official tablist. Both render unconditionally; CSS
+ * (styles/header.css.ts) keeps them hidden at >= 768px so the tablet drawer
+ * and the desktop layout stay exactly as they were.
+ */
+export function MobileHeaderActions({
+  sessionId,
+  useSessions,
+  useSessionStatus,
+  useJobs,
+  watchRows,
+  t,
+}: MobileHeaderActionsProps) {
+  const tabs = useViewTabs()
+  const active = tabs.find((tab) => tab.active) ?? tabs[0]
+  const nextView = tabs.find((tab) => !tab.active)
+
+  /* At-a-glance activity, right end of the view-switch row. The native
+     header entries these replace were hidden on phone: both are ~103px wide
+     and the header's left grid column is 92px, so they overflowed straight
+     across the centred session title. Reading the counts from the sessions
+     snapshot instead of re-homing the official DOM keeps React's ownership
+     of its own nodes intact — the detail lives one tap away in the info
+     card, which this chip opens.
+     0.1.7 sources (0.1.5's per-parent subagent / per-session job snapshots
+     are deleted): the catalog is read straight off the explicit-read
+     projection store — no refresh from here, exactly like the official
+     SubagentHeaderLineage (every projection refresh call registers a
+     session the controller re-reads on each reconnect); job rows come from
+     the `jobs` service the renderer exposes as the useJobs hook prop, with
+     a fixed empty source substituted when the service is absent. */
+  useEffect(() => watchRows(sessionId), [sessionId, watchRows])
+  const subagents = useSessions((s) => s.projectionsBySession[sessionId]?.values.subagentCatalog) ?? []
+  const jobs = useJobs((s) => s.rows[sessionId]) ?? []
+  /* Running派生式与官方 SubagentHeaderLineage 一致：状态表优先，目录行兜底。 */
+  const statuses = useSessionStatus((m) => m)
+  const byId = useSessions((s) => s.byId)
+  const runningOf = (id: SessionId): boolean | undefined =>
+    statuses.get(id)?.running ?? byId[id]?.running
+  const subagentRunning = subagents.some((e) => runningOf(e.id) === true)
+  const jobRunning = jobs.some((j) => j.status === 'running' || j.status === 'stopping')
+  const jobBad = jobs.some((j) => j.status === 'failed' || j.status === 'killed')
+  const subagentState: ActivityState = subagentRunning ? 'running' : 'done'
+  const jobState: ActivityState = jobRunning ? 'running' : jobBad ? 'warning' : 'done'
+  const hasActivity = subagents.length > 0 || jobs.length > 0
+  /* Only reached when the official entry is missing entirely — the info
+     card still carries both counts, so the tap explains something. */
+  const openInfoCard = (): void => { window.dispatchEvent(new CustomEvent(SESSION_INFO_EVENT)) }
+
+  return (
+    <>
+      <button
+        type="button"
+        data-mobile-nav="header-back"
+        aria-label={t('backToList')}
+        title={t('backToList')}
+        onClick={() => window.dispatchEvent(new CustomEvent(GO_HOME_EVENT))}
+      >
+        <IconChevronLeftOutlineRegular size={20} />
+      </button>
+      {tabs.length > 1 && active !== undefined && (
+        <button
+          type="button"
+          data-mobile-nav="header-viewrow"
+          aria-label={t('switchToView', { view: nextView?.label ?? active.label })}
+          onClick={() => nextView?.el.click()}
+        >
+          <span data-mobile-nav="header-viewrow-label">{t('switchToView', { view: nextView?.label ?? active.label })}</span>
+          <span data-mobile-nav="header-viewrow-dots" aria-hidden="true">
+            {tabs.map((tab, index) => (
+              <i key={index} data-active={tab.active ? '' : undefined} />
+            ))}
+          </span>
+        </button>
+      )}
+      {hasActivity && (
+        /* A sibling of the view-switch button, not a child: that button
+           spans the whole row, so nesting this would make every tap on the
+           chip also switch views. */
+        <div data-mobile-nav="header-activity">
+          <ActivityPill
+            kind="subagent"
+            count={subagents.length}
+            state={subagentState}
+            label={t('infoSubagents', { count: subagents.length })}
+            trigger={SUBAGENT_TRIGGER}
+            onFallback={openInfoCard}
+            Icon={IconSubagentGlyph}
+          />
+          <ActivityPill
+            kind="job"
+            count={jobs.length}
+            state={jobState}
+            label={t('infoJobs', { count: jobs.length })}
+            trigger={JOBS_TRIGGER}
+            onFallback={openInfoCard}
+            Icon={IconTaskGlyph}
+          />
+        </div>
+      )}
+    </>
+  )
+}
+
+/** Full props for the session header's right-edge utility buttons. */
+export type MobileHeaderUtilitiesProps =
+  & PropsRuntime<'conversation.session.header.utilities'>
+  & PropsLocale<typeof NS>
+  & { openFiles: () => boolean }
+
+/**
+ * Where the header's sidebar button routes — three ways, resolved at runtime
+ * (user decision 2026-09-11 after DSH 0.1.5 grew an official right sidebar;
+ * priority flipped 2026-09-21, issue #11 / PR #12, once dsh-better-sidebar
+ * 0.19 retired its own right panel):
+ *
+ * - `'official'` — the host ships the right sidebar (0.1.5+): the button
+ *   drives the official controls. This is the phone's one entry to every
+ *   better-sidebar tab too (0.19+ registers them all into the native panel,
+ *   which the host takes full screen on a phone), so it wins whenever the
+ *   panel exists, better-sidebar installed or not.
+ * - `'better'` — no official panel but dsh-better-sidebar ≤ 0.18 is drawing
+ *   its own right panel (DSH < 0.1.5): the original design, the button
+ *   clicks the plugin's own (CSS-hidden) toggle.
+ * - `null` — neither: the button does not render at all.
+ *
+ * In every case the OTHER sidebar buttons (the official corner ExpandButton,
+ * better-sidebar's own toggle) stay hidden on the phone — this button is the
+ * one visible affordance. Anchors, detection and the click-through live in
+ * sidebar-panels.ts, shared with the edge swipe-back and the @-reference
+ * auto-close: stable, non-hashed DOM markers, never locale.
+ */
+/** Live mirror of {@link readSidebarTarget} — same observer pattern as the
+ * old workbench presence gate it replaces (plugins load after us; the right
+ * panel mounts with the frame). */
+function useSidebarTarget(): SidebarTarget {
+  const [target, setTarget] = useState<SidebarTarget>(readSidebarTarget)
+  useEffect(() => {
+    const check = (): void => setTarget(readSidebarTarget())
+    const observer = new MutationObserver(check)
+    observer.observe(document.body, { childList: true, subtree: true })
+    check()
+    return () => observer.disconnect()
+  }, [])
+  return target
+}
+
+/**
+ * Session header, right lane: the session-info entry (S4 owns the actual
+ * sheet — this fires a hook event for it to pick up) and the sidebar entry.
+ * The sidebar button routes per {@link SidebarTarget}: the official right
+ * sidebar's controls, else legacy better-sidebar's own toggle (no public
+ * "open the panel" API — BetterSidebarService.openTab only auto-expands for
+ * a content open, not a bare type-only open, so it clicks the plugin's real
+ * toggle through its root marker plus the `_toggleButton` class suffix,
+ * verified live on 0.15.0, 2026-08-17), or nothing when neither exists.
+ */
+export function MobileHeaderUtilities({ t, openFiles }: MobileHeaderUtilitiesProps) {
+  // LEGACY better-sidebar (≤ 0.18, own right panel) phone close button
+  // (S3.1 follow-up, 2026-08-17). On 0.19+ / DSH 0.1.5 the phone opens the
+  // host's full-screen native panel instead, which carries its own collapse
+  // control, and this pill's CSS gate below matches nothing (the 0.19 panel
+  // class is `_bottomPanel`) — it stays for the older combination only.
+  // The panel's own top-right toggle cluster is hidden below 768px
+  // (styles/compat.css.ts) because it duplicates the workbench button
+  // below — but that cluster is also the panel's ONLY close control, so
+  // hiding it blindly leaves an open panel with no way out. This button is
+  // appended straight to document.body, mirroring the existing
+  // preview-full-toggle pattern in MobileNavOverlay.tsx (raw DOM, not a
+  // React portal — react-dom is not among this plugin's platform-module
+  // imports, see AGENTS.md "client import purity"): never inside the
+  // panel's own subtree (the third party's React re-renders would wipe
+  // it) and never under any transformed/backdrop-filter ancestor (the S4
+  // info-card WebKit lesson in AGENTS.md — position:fixed would re-anchor
+  // to that ancestor instead of the viewport). It clicks the SAME hidden
+  // official toggle the workbench button below uses. Visibility is pure
+  // CSS (styles/compat.css.ts: `body:has([data-dsh-better-sidebar]
+  // [class$="_panel"])` — the panel's class ends in "_panel" only while
+  // open, "_panelHidden" is appended once closed), so this effect only
+  // has to guarantee the node exists — no MutationObserver needed to
+  // track open/closed state. Icon paths copied verbatim from
+  // IconCloseOutlineRegular (primitives) for the same reason the subagent
+  // and task glyphs above are hand-built: this button lives outside the
+  // React tree, so it cannot render a primitives component directly.
+  useEffect(() => {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.dataset.mobileNav = 'better-sidebar-close'
+    button.setAttribute('aria-label', t('workbenchClose'))
+    button.title = t('workbenchClose')
+    // Bottom-center labeled pill (real-device follow-up, 2026-08-17): the
+    // icon markup is a static trusted string (safe as innerHTML), but the
+    // locale label is untrusted-shaped text — built as a real text node via
+    // textContent, not string-concatenated into the same innerHTML, so a
+    // translation can never be parsed as markup.
+    button.innerHTML = '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true">'
+      + '<path d="M14.1168 13.197L13.197 14.1167L1.8833 2.80303L2.80309 1.88324L14.1168 13.197Z" fill="currentColor"/>'
+      + '<path d="M13.197 1.88326L14.1168 2.80305L2.80309 14.1168L1.8833 13.197L13.197 1.88326Z" fill="currentColor"/>'
+      + '</svg>'
+    const label = document.createElement('span')
+    label.textContent = t('workbenchClose')
+    button.appendChild(label)
+    const onClick = (): void => {
+      document.querySelector<HTMLButtonElement>(BETTER_TOGGLE)?.click()
+    }
+    button.addEventListener('click', onClick)
+    document.body.appendChild(button)
+    return () => {
+      button.removeEventListener('click', onClick)
+      button.remove()
+    }
+  }, [t])
+
+  // Sidebar routing: the official right sidebar (DSH 0.1.5+) when the host
+  // has one; else legacy better-sidebar's toggle; else the button stays
+  // hidden — it used to be a dead control without the plugin (2026-08-17
+  // user question), and the same must hold for a host with no right sidebar
+  // either. The close pill above keeps its own better-sidebar CSS :has()
+  // gate, unchanged.
+  const sidebar = useSidebarTarget()
+
+  return (
+    <>
+      <button
+        type="button"
+        data-mobile-nav="header-info"
+        aria-label="更多会话操作"
+        title="更多会话操作"
+        onClick={() => window.dispatchEvent(new CustomEvent(SESSION_INFO_EVENT))}
+      >
+        <IconInfoOutlineRegular size={20} /><span data-qq="more-label">更多</span>
+      </button>
+      {sidebar !== null && <button
+        type="button"
+        data-mobile-nav="header-workbench"
+        data-sidebar-target={sidebar}
+        aria-label="查看工作区文件"
+        title="查看工作区文件"
+        onClick={() => { if (!openFiles()) toggleSidebarTarget(sidebar) }}
+      >
+        {/* No panel-RIGHT glyph in primitives (re-checked against the
+            0.1.7-rc.2 exports) — mirrored via CSS (styles/header.css.ts)
+            instead of hand-drawing a new glyph. The panel icon's "left
+            column" reads as "right column" flipped, which is exactly the
+            workbench's own right-side-panel semantics. */}
+        <IconPanelLeftOutlineRegular size={20} /><span data-qq="file-label"><img src={QQ_ASSETS.file} alt="" />文件</span>
+      </button>}
+    </>
+  )
+}

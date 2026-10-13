@@ -1,0 +1,21 @@
+{
+  "name": "dsh-mobile-workbench",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "node tests/workspace.mjs && node tests/documents.mjs && node tests/security.mjs",
+    "build:ui": "npm run build --workspace=dsh-zen-remote",
+    "verify:ui": "npm run verify --workspace=dsh-zen-remote"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "overrides": {
+    "argparse": "2.0.1"
+  },
+  "license": "MIT"
+}

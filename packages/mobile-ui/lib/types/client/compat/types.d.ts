@@ -1,0 +1,141 @@
+import type { Context } from '@deepseek-ai/cordis';
+import type { SessionId } from '@deepseek-ai/dsh-session/types';
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types';
+/**
+ * Browser-half cordis context. 0.1.1's `dsh-client-runtime` exported
+ * `ClientContext` as the bare `Context` type (lib/types/client/index.d.ts:55);
+ * 0.1.2 has no such alias. Re-declared here under the same name so the
+ * dozen files that used it only change their import path, not the
+ * identifier.
+ */
+export type ClientContext = Context;
+/** Session id. Both versions ship it in `@deepseek-ai/dsh-session/types`; re-exported to collect import points. */
+export type { SessionId };
+/** Workspace id. 0.1.2 lives in `@deepseek-ai/dsh-workspace/types`. */
+export type { WorkspaceId };
+/**
+ * Structural mirror of the session-row fields this plugin reads, valid
+ * against both versions' `SessionSummary`. Deliberately NOT imported from
+ * either version (see the file header): `projectionValues` stays `unknown`
+ * rather than copying the host's
+ * `Readonly<Partial<SessionProjectionMap>>` — that type differs between
+ * versions and fights assignments under `exactOptionalPropertyTypes`. The
+ * single read site (MobileHome.tsx:311) already casts.
+ *
+ * `agentPreset` and `pendingInteraction` are intentionally absent: their
+ * real readers (MobileHome.tsx, MobileSessionInfo.tsx) receive rows typed by
+ * the host's devDeps (0.1.2), not by this mirror, so fields here would not
+ * help them — use {@link agentPresetOf} / {@link hasPendingInteraction}
+ * instead.
+ */
+export interface MobileSessionRow {
+    id: SessionId;
+    title?: string;
+    displayTitle: string;
+    cwd?: string;
+    parentId?: SessionId;
+    origin?: 'subagent';
+    running: boolean;
+    completed?: boolean;
+    blank: boolean;
+    updatedAt: number;
+    /**
+     * 0.1.7 的本地引用计数（retainedBy.mainView > 0 即「主视图正打开这个
+     * 会话」）。0.1.5 的 SessionListState.current 删掉了，主视图会话从行上
+     * 派生——与官方 uiSession.publishMain 同款读法（见 {@link mainSessionIdOf}）。
+     */
+    retainedBy?: Readonly<{
+        mainView?: number;
+    }>;
+    /** 宿主投影值；本插件只读 sessionStats.turns，读的地方自己 cast。 */
+    projectionValues?: unknown;
+}
+/**
+ * 0.1.5 的 `SessionListState.current` 在 0.1.7 删除；主视图会话改为从目录
+ * 行派生：被 mainView 来源 retain 的那一行。这正是官方 uiSession
+ * publishMain 的挑选方式（client/ui-session index.ts：先看当前绑定是否
+ * mainView，否则全表找第一条 mainView retain），本插件读同一条事实。
+ * @param byId - 会话目录表（useSessions 的 byId）。
+ * @returns 主视图会话 id；没有主视图会话时 undefined。
+ */
+export declare function mainSessionIdOf(byId: Readonly<Record<string, MobileSessionRow>>): SessionId | undefined;
+/**
+ * 子代理目录条目的本地镜像（0.1.7 `subagentCatalog` projection 的元素）。
+ * 0.1.5 的「按父会话的子代理快照」字段删除；目录改经
+ * `projectionsBySession[parentId].values.subagentCatalog` 显式读，条目只
+ * 镜像本插件读到的字段（id；运行态按官方派生式从状态表/目录行取，见
+ * MobileSessionHeader.tsx）。
+ */
+export interface SubagentCatalogEntryLike {
+    readonly id: SessionId;
+    readonly mode: 'one-shot' | 'continuable' | 'unknown';
+    readonly label?: string;
+}
+/** 0.1.7 job roster 行的本地镜像：本插件只读 status。 */
+export interface JobRowLike {
+    readonly status: 'running' | 'stopping' | 'completed' | 'killed' | 'failed';
+}
+/**
+ * `ctx.jobs` 服务的本地最小接口（0.1.7 `dsh-api-job-controller` 的 client
+ * 面）。0.1.5 的「按会话的任务快照」字段删除；任务列表改由 job roster 服务给出，
+ * 官方 JobListAction 用同一条路（hooks.jobs + watchRows）。
+ */
+export interface JobsLike {
+    /** Rosters and observations snapshot: `{ rows: Record<sessionId, JobRow[]> }`. */
+    readonly state: {
+        getSnapshot(): {
+            readonly rows: Readonly<Record<string, readonly JobRowLike[]>>;
+        };
+        subscribe(listener: () => void): () => void;
+    };
+    /** Keep one session's roster stream open while a viewer is mounted (ref-counted). */
+    watchRows(sessionId: SessionId): () => void;
+}
+/**
+ * 渲染器把 inject 工厂里 `hooks.jobs`（{@link JobsLike.state} 形状的
+ * observable）包装成的标准 hook prop（官方 ui-jobs 同款约定：`jobs` →
+ * `useJobs`）。可选：服务缺席（懒查失败）时组件收不到它，任务计数隐藏。
+ */
+export type UseJobs = <S>(sel: (snapshot: {
+    readonly rows: Readonly<Record<string, readonly JobRowLike[]>>;
+}) => S, eq?: (a: S, b: S) => boolean) => S;
+/**
+ * 0.1.1's session row carries `agentPreset`; 0.1.2 dropped it. Reading it
+ * must not depend on which version's types are in scope in the current
+ * file, so narrow through unknown.
+ * @param row - a session row of either version.
+ * @returns the agent preset name, or undefined when absent.
+ */
+export declare function agentPresetOf(row: unknown): string | undefined;
+/**
+ * 0.1.1's session row carries `pendingInteraction` (the pending-interaction
+ * state behind the sidebar's yellow dot); 0.1.2 serves it from the
+ * uiSession service instead. This answers only "does this row carry a
+ * pending interaction".
+ * @param row - a session row of either version.
+ * @returns true when the row has a pending interaction.
+ */
+export declare function hasPendingInteraction(row: unknown): boolean;
+/**
+ * `ctx.sessions.binding(id)?.session.rename(title)` 的返回值。
+ * 两版的包裹类型不同（0.1.1 是 RpcResult、0.1.2 是 RemoteResult），但判别式
+ * 联合的形状一致：成功分支带 ok:true（还有个我们不读的 value），失败分支带
+ * ok:false + error。这里只镜像本插件真正读到的两个字段（ok、error.message），
+ * 两版的真类型都能结构赋值进来。
+ */
+export type RenameResult = Promise<{
+    readonly ok: true;
+} | {
+    readonly ok: false;
+    readonly error: {
+        readonly message: string;
+    };
+}>;
+/**
+ * 待处理交互的选择器 hook（0.1.2 的标准 prop `useSessionPendingInteraction`）；
+ * 0.1.1 没有这个 prop，运行时读到 undefined。本地镜像只描述本插件读到的形状
+ * （按会话 id 的只读 Map + 选择器调用），不从
+ * `@deepseek-ai/dsh-client-ui-session/client` 拿类型——那个包 0.1.1 装不到。
+ */
+export type UsePendingInteractions = <S>(sel: (m: ReadonlyMap<SessionId, unknown>) => S, eq?: (a: S, b: S) => boolean) => S;
+//# sourceMappingURL=types.d.ts.map

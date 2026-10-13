@@ -1,0 +1,7 @@
+{
+  "name": "dsh-usage-sync",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT"
+}

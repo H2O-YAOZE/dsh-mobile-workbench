@@ -1,0 +1,569 @@
+import { SESSION_HEADER } from './session-header.ts'
+// header — session-page header five-piece reflow (S2, 2026-08-17). Scoped
+// entirely to (max-width: 767px) and appended LAST (after home.css.ts) so
+// its rules win ties against the shared <=1023px block in layout.css.ts —
+// same reasoning as home.css.ts: 768-1023px keeps the v1.0.0 drawer header
+// untouched, >=1024px is a strict no-op.
+//
+// DOM this reflows (dsh-client-ui-conversation lib/client.js:6949-7009,
+// verified live 2026-08-17 at 375px — class names below are the CURRENT
+// hashed values, always targeted by suffix):
+//   header                    ConversationSessionHeader root
+//     div.titleRow
+//       div.titleCluster        (official: a flex cluster; we flatten it)
+//         nav.crumbs             breadcrumb chain, last segment = the title
+//         div.headerActions      [data-slot="conversation.session.header.actions"]
+//       div.headerUtilities    [data-slot="conversation.session.header.utilities"]
+//       div.headerCorner       [data-conversation-header-corner]
+//                               [data-slot="conversation.session.header.corner"]
+//                               (DSH 0.1.5: the right sidebar's ExpandButton —
+//                               hidden below, our workbench button routes to
+//                               its controls instead)
+//     div.tabs[role="tablist"]  Chat/Trajectory, only when there is >1 view
+
+export const HEADER_CSS = `/* ---------- session header five-piece reflow (< 768px) ---------- */
+
+/* New elements render unconditionally (React does not know about media
+   queries); default them to hidden so 768px+ never sees them, then
+   re-enable inside the phone block below. Belt-and-braces alongside the
+   scoped rules — mirrors the existing [data-mobile-nav="*"] desktop no-op
+   list in misc.css.ts. */
+[data-mobile-nav="header-back"],
+[data-mobile-nav="header-viewrow"],
+[data-mobile-nav="header-activity"],
+[data-mobile-nav="header-info"],
+[data-mobile-nav="header-workbench"],
+/* The workbench close pill's default-hidden used to live in compat.css.ts —
+   but EVERYTHING in layout/compat/misc sits inside one shared
+   (max-width: 1023px) block (opened at the top of layout, closed at the end
+   of misc), so that "top-level" rule silently never applied at >=1024 and
+   the pill rendered as an unstyled button on desktop (2026-08-17 report).
+   This file is appended after the shared block closes, so here it is truly
+   global; the <=767px :has() show rule in compat overrides it with
+   !important. */
+[data-mobile-nav="better-sidebar-close"] {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  /* The Files action targeted the dsh-web-ui-all (aionui) explorer sheet —
+     a different, unrelated suite from the workbench entry this slice adds
+     (dsh-better-sidebar). Hidden here only; 768-1023px keeps it exactly as
+     v1.0.0 shipped it. */
+  [data-mobile-nav="files"] {
+    display: none !important;
+  }
+
+  /* --- three-column header: [back 92px] [title, truly centered] [utilities 92px] --- */
+  /* The bottom padding is the view-switch row's seat: that row is
+     position:absolute (see the bottom of this file — it renders two levels
+     deep inside headerActions and can never be a grid item of titleRow), so
+     without a reserve it would hang over the message list. 28px = its
+     height. Unconditional rather than header:has([data-mobile-nav=
+     "header-viewrow"]) on purpose: :has() is silently dropped by pre-105
+     WebViews (see AGENTS.md) and a 28px overlap on the first message is a
+     worse failure than 28px of empty band in the (never observed in
+     practice) single-view session. Total header chrome: 48 + 28 = 76px.
+     Left/right 8px (S2.1 report leftover, fixed in S4): the official header
+     had zero horizontal padding, so the utilities button cluster's right
+     edge sat flush against the screen edge (x=390 at 390px width, no
+     margin). The 92px grid columns absorb this fine — they're fixed track
+     widths, only the center 1fr column shrinks by 16px. */
+  ${SESSION_HEADER} {
+    position: relative;
+    /* Above the scroller's plain and relative-positioned message content, so
+       the ::after fade strip below actually paints over the messages sliding
+       under it (positioned z-auto boxes otherwise win by DOM order — the
+       scroller comes after the header). Deliberately tiny: the seat (7),
+       scroll-to-bottom (8) and every overlay this plugin owns (30+) stay
+       above. */
+    z-index: 2;
+    padding: 0 8px 28px !important;
+  }
+  /* No header bottom line — fade instead (real-device round 2, 2026-08-17).
+     The official header draws its border as a \`::after\` 1px bar (the
+     \`border-bottom\` on the header itself is transparent, just a layout
+     reserve — dsh-client-ui-conversation lib/client.js ".wSkVaW_header{
+     border-bottom:1px solid #0000}.wSkVaW_header:after{...height:1px;
+     position:absolute;bottom:1px...}", verified live 2026-08-17), so the
+     bar is repurposed rather than hidden: restyled into a 20px strip
+     hanging just below the header that fades the messages in — the same
+     look the scroller's mask-image used to produce, without a mask on a
+     scroll container (iOS WebKit renders that as fog over the header, see
+     composer.css.ts "no divider above OR below the message list",
+     2026-08-23). color-mix instead of the transparent keyword: the host
+     writes its own seat gradient that way, and plain \`transparent\` is
+     rgba(0,0,0,0) — WebKit interpolates it through grey. */
+  ${SESSION_HEADER}::after {
+    height: 20px !important;
+    top: 100% !important;
+    bottom: auto !important;
+    background: linear-gradient(to bottom, var(--dsw-alias-bg-base), color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent)) !important;
+  }
+  /* grid-row: 1 on every item is load-bearing, not decoration (S2.1 fix for
+     the "标题被挤下去" report). The three items are placed with explicit
+     grid-column but arrive in DOM order crumbs(2) → headerActions(1) →
+     headerUtilities(3): sparse auto-placement never moves its cursor
+     backwards, so headerActions and headerUtilities were pushed onto an
+     implicit SECOND row. Measured at 390px: row1 = crumbs 28px, row2 =
+     back button 44px, titleRow = 72px with the title stuck at the top
+     instead of centered. Pinning the row makes it one 48px band again. */
+  ${SESSION_HEADER} [class$="_titleRow"] {
+    position: relative;
+    display: grid;
+    grid-template-columns: 92px 1fr 92px;
+    grid-template-rows: minmax(48px, auto);
+    align-items: center;
+    min-height: 48px;
+    padding: 0 !important;
+  }
+  /* Flatten the official cluster so its two children (crumbs, headerActions)
+     become direct grid items of titleRow instead of a nested flex box. */
+  ${SESSION_HEADER} [class$="_titleCluster"] {
+    display: contents;
+  }
+  /* margin-left: 0 cancels layout.css.ts's shared <=1023px
+     "margin-left: auto !important" on this exact selector (it pushed the
+     Files button to the row's right edge in the old non-grid header;
+     inside our grid column it instead shoves the back button 48px right of
+     the column's start — the auto margin absorbs the leftover space
+     between the button's content width and the 92px column). */
+  ${SESSION_HEADER} [class$="_headerActions"] {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: start;
+    margin-left: 0 !important;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+  /* layout.css.ts's shared <=1023px block hides this element outright
+     (header > :first-child > :last-child { display: none !important },
+     specificity (0,3,1) — v1.0.0 relocated the desktop Session-log capsule
+     to the drawer footer on every narrow width). That selector is repeated
+     here at equal specificity so the later source order wins the display
+     property; the class-suffix selector alone (0,2,1) would silently lose. */
+  ${SESSION_HEADER} [class$="_headerUtilities"],
+  ${SESSION_HEADER} > :first-child > :last-child {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
+    display: flex !important;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+  /* justify-self: stretch (the grid default) so this fills the whole 1fr
+     column as a definite-width box — center/center-content happens inside
+     it. justify-self: center (tried first) sizes the item to its content
+     with no automatic column cap, and the obvious fix — max-width: 100% —
+     resolves against the WRONG box here (measured 93.6px at 390px, where
+     the column is ~206px): the item's DOM parent (titleCluster) is
+     display:contents, and percentage max-width does not reliably resolve
+     through a boxless ancestor to the grid track. Stretching sidesteps the
+     percentage entirely — but layout.css.ts's shared <=1023px block ALSO
+     caps this exact selector at max-width: 24vw !important (93.6px at
+     390px — the value this rule used to silently inherit once its own
+     max-width was dropped in favor of stretch), so that must be reset to
+     none here too. */
+  ${SESSION_HEADER} [class$="_crumbs"] {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: stretch;
+    max-width: none !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    overflow: hidden;
+  }
+  /* Subagent sessions keep ONE ancestor crumb (2026-08-18): the PC header
+     lets you tap the parent session's title to switch back — that affordance
+     was lost on phone when the whole parent chain was hidden as "多余项".
+     Show only the immediate parent (for agent-teams member sessions that IS
+     the captain/main session; deeper ancestors stay hidden — a 3-level chain
+     cannot fit the ~206px center column at 390px). The parent crumb is the
+     official breadcrumb <button> (dsh-client-ui-conversation renders
+     open(parentId) as its onClick), so tapping needs no JS from this plugin,
+     and main sessions (chain length 1) have no :nth-last-child(2) seg at
+     all — the centered single title is pixel-identical to before. */
+  ${SESSION_HEADER} [class$="_crumbSeg"]:not(:nth-last-child(-n+2)) {
+    display: none !important;
+  }
+  ${SESSION_HEADER} [class$="_crumbSeg"]:nth-last-child(2) {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    min-width: 0;
+    max-width: 38%;
+  }
+  /* Ancestors BEFORE the parent seg are hidden, which would leave the
+     parent seg's own leading "/" dangling at the start of the title. */
+  ${SESSION_HEADER} [class$="_crumbSeg"]:nth-last-child(2) [class$="_crumbSep"] {
+    display: none !important;
+  }
+  /* Parent crumb: small tertiary text so the 19px current title stays the
+     visual anchor; min-height keeps a finger-sized target inside the 48px
+     row. Specificity (0,4,1) outranks the shared 19px _crumb rule below. */
+  ${SESSION_HEADER} [class$="_crumbSeg"]:nth-last-child(2) [class$="_crumb"] {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--dsw-alias-label-tertiary, rgba(0, 0, 0, .45));
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 2px 0 6px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  ${SESSION_HEADER} [class$="_crumbSeg"]:last-child {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    max-width: 100%;
+  }
+  /* The last seg's own "/" is the divider between parent and current title —
+     it only exists when there IS an ancestor (index > 0), so it can simply
+     stay visible now that the parent seg shows. (It used to be hidden here:
+     with the parent hidden it dangled before the title.) */
+  /* BOTH selectors are required: [class$=] matches the whole class
+     ATTRIBUTE's suffix, and the current-session title button's attribute is
+     "wSkVaW_crumb wSkVaW_crumbCurrent" — it ends in _crumbCurrent, so the _crumb
+     suffix selector alone silently missed the one element that matters
+     (measured live: the title stayed 14px while the rule sat in the bundle,
+     2026-08-17). */
+  ${SESSION_HEADER} [class$="_crumb"],
+  ${SESSION_HEADER} [class$="_crumbCurrent"] {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    max-width: 100%;
+    /* Real-device feedback (2026-08-17): the session title read too small
+       next to the enlarged header icons — 19px sits just under the home
+       screen's 22px workspace title, keeping the two-level hierarchy. */
+    font-size: 19px;
+    font-weight: 600;
+  }
+
+  /* Running-status dot: no official element to reposition (the header
+     renders only the crumb title, the two action slots, and the tablist —
+     no status indicator), so this is the plan's documented fallback —
+     read the data ourselves and draw it (effects/header-status.ts stamps
+     data-mobile-nav-dot on the frame). A ::after on the title crumb keeps
+     it truly inline with the (centered, truncated) text instead of a
+     separately positioned box that would fight the centering math. */
+  ${SESSION_HEADER} [class$="_crumbCurrent"]::after {
+    content: '';
+    display: none;
+    width: 6px;
+    height: 6px;
+    margin-left: 6px;
+    border-radius: 50%;
+    vertical-align: middle;
+  }
+  [data-mobile-nav="frame"][data-mobile-nav-dot] header [class$="_crumbCurrent"]::after {
+    display: inline-block;
+  }
+  [data-mobile-nav="frame"][data-mobile-nav-dot="ongoing"] header [class$="_crumbCurrent"]::after {
+    background: var(--dsw-alias-state-business-primary, #4f6ef7);
+  }
+  [data-mobile-nav="frame"][data-mobile-nav-dot="warning"] header [class$="_crumbCurrent"]::after {
+    background: var(--dsw-alias-state-warn-primary, #d97706);
+  }
+  [data-mobile-nav="frame"][data-mobile-nav-dot="done"] header [class$="_crumbCurrent"]::after {
+    background: var(--dsw-alias-state-success-primary, #16a34a);
+  }
+
+  /* Everything else the official header puts in these two list slots — the
+     agent-preset mode badge, the jobs/subagent trigger, the desktop
+     Session-log download capsule, and this plugin's own legacy directory
+     toggle — is the "不常驻" set the design defers to the S4 info card.
+     Scoped by the slots' own [data-slot] wrapper (a stable, non-hashed
+     contract marker) rather than enumerating each registrant, so a future
+     third-party header action is hidden by default too. */
+  ${SESSION_HEADER} [data-slot="conversation.session.header.actions"] > *,
+  ${SESSION_HEADER} [data-slot="conversation.session.header.utilities"] > * {
+    display: none !important;
+  }
+  /* DSH 0.1.5's third titleRow child: the right sidebar's ExpandButton
+     (dsh-client-ui-sidebar-right, slot conversation.session.header.corner
+     inside div.headerCorner). Left alone it auto-placed into an implicit
+     4th grid column at the screen's top-right corner — a second panel-left
+     icon next to our Workbench button, reading as "the hidden official
+     sidebar toggle is back" (reported 2026-09-11). The button itself is the
+     one our sidebar control forwards to whenever the host has this panel
+     (sidebar-panels.ts, official first since 2026-09-21 — better-sidebar
+     0.19+ puts all its tabs in here), and a display:none button still
+     receives synthetic .click() (the tablist precedent), so hiding it costs
+     nothing. better-sidebar 0.19's own bottom-workbench toggle
+     (\`[data-dsh-bottom-toggle]\`) registers into the utilities slot and is
+     caught by the blanket hide above — intended: that surface is not for
+     the phone.
+     Anchors, in the specificity order they NEED (measured live, 2026-09-11):
+     the corner div must be beaten with (0,3,1) — the utilities un-hide rule
+     above spells header > :first-child > :last-child at exactly that
+     weight, and with 0.1.5's third titleRow child the corner IS that
+     :last-child now, so its flex !important outranks any lighter hide (a
+     single-attribute hide loses at (0,2,1) — both spellings were tried
+     live). Chaining BOTH of the corner's own anchors on one selector — the
+     host's data-conversation-header-corner contract attribute AND the
+     class suffix — reaches the tie, and the later source order here wins
+     it. The slot wrapper rule below needs no help: nothing !important
+     fights it, so its (0,2,1) settles the button. */
+  ${SESSION_HEADER} [data-conversation-header-corner][class$="_headerCorner"],
+  ${SESSION_HEADER} [data-slot="conversation.session.header.corner"] {
+    display: none !important;
+  }
+  /* Native background-task / subagent entries (rewritten for DSH 0.1.1,
+     2026-08-21). Three upstream changes killed the old "park the root as a
+     zero-width anchor, hide the trigger, forward the tap" design at once:
+
+     - the subagent entry moved out of header.actions into the new
+       conversation.session.header.lineage slot (inside the breadcrumb);
+     - its root's class attribute is now "ZKlsPq_root " — with a TRAILING
+       SPACE — so a [class$="_root"] anchor matches nothing at all;
+     - the trigger only reacts to TRUSTED input: .click() and synthetic
+       pointer/mouse events leave aria-expanded untouched (measured on device
+       with every plugin override stripped), so forwarding a tap in JS can
+       never open it again.
+
+     The trigger's geometry is therefore owned at runtime by
+     effects/native-trigger-overlay.ts, which lays the REAL button
+     transparently over the activity pill — a genuine finger tap lands on the
+     official element. Nothing in this stylesheet may size, hide, or set
+     pointer-events on the trigger: that is exactly what would take the tap
+     target away again.
+
+     CSS keeps only two chores. Dissolve the root so its box (and its
+     stray separator, hidden below) stops occupying the breadcrumb, and let
+     the trigger participate from wherever the overlay pins it. And no menu
+     re-anchoring anymore: the 0.1.1 popover portals to <body> as
+     position:fixed and positions itself from the trigger's viewport rect
+     (measured 336px wide, fully on screen at 411px). */
+  ${SESSION_HEADER} [data-slot="conversation.session.header.actions"] > *:has(> button[class$="_trigger"]),
+  ${SESSION_HEADER} [data-slot="conversation.session.header.lineage"] > *:has(> button[class$="_trigger"]) {
+    display: contents !important;
+  }
+  ${SESSION_HEADER} [data-slot="conversation.session.header.actions"] [class$="_separator"],
+  ${SESSION_HEADER} [data-slot="conversation.session.header.lineage"] [class$="_separator"] {
+    display: none !important;
+  }
+  /* The agent-preset mode badge specifically survives the blanket hide
+     above: layout.css.ts's shared <=1023px block targets it directly
+     (header [class$="_label"]:has(> svg) { display: block !important }),
+     specificity (0,3,1), higher than the [data-slot] wrapper rule (0,2,1) —
+     display wins on specificity before source order, so a same-selector
+     override is needed here too. */
+  ${SESSION_HEADER} [class$="_label"]:has(> svg) {
+    display: none !important;
+  }
+  ${SESSION_HEADER} [data-slot="conversation.session.header.actions"] > [data-mobile-nav="header-back"] {
+    display: inline-flex !important;
+  }
+  /* header-viewrow is position:absolute (see below), so its re-shown
+     display value must match the flex layout its own rule declares. */
+  ${SESSION_HEADER} [data-slot="conversation.session.header.actions"] > [data-mobile-nav="header-viewrow"] {
+    display: flex !important;
+  }
+  /* Our own chip lives in the same slot, so the blanket hide above swallows
+     it unless it is named here too (it was, on the first build: the chip
+     rendered with the right counts and painted nothing). */
+  ${SESSION_HEADER} [data-slot="conversation.session.header.actions"] > [data-mobile-nav="header-activity"] {
+    display: inline-flex !important;
+  }
+  ${SESSION_HEADER} [data-slot="conversation.session.header.utilities"] > [data-mobile-nav="header-info"],
+  ${SESSION_HEADER} [data-slot="conversation.session.header.utilities"] > [data-mobile-nav="header-workbench"] {
+    display: inline-flex !important;
+  }
+
+  /* Back button: 44pt touch target, leftmost column. */
+  [data-mobile-nav="header-back"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--dsw-alias-label-primary, inherit);
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  [data-mobile-nav="header-back"]:active {
+    opacity: .6;
+  }
+
+  /* Info + workbench utility buttons, rightmost column. */
+  [data-mobile-nav="header-info"],
+  [data-mobile-nav="header-workbench"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--dsw-alias-label-secondary, inherit);
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  [data-mobile-nav="header-info"]:active,
+  [data-mobile-nav="header-workbench"]:active {
+    background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, .06));
+  }
+  /* Icon family unification (real-device round 2, 2026-08-17): the ⓘ text
+     glyph is gone (MobileSessionHeader.tsx renders the official
+     IconInfoOutlineRegular since DSH 0.1.7) and the workbench button's
+     IconPanelLeftOutlineRegular is mirrored into a panel-RIGHT glyph —
+     there's no panel-RIGHT glyph in primitives (re-checked against the
+     0.1.7-rc.2 exports), and the plugin's own right-side panel semantics
+     are exactly the left icon flipped. Both buttons carry a same-size
+     (16px) icon. */
+  [data-mobile-nav="header-workbench"] svg {
+    transform: scaleX(-1);
+  }
+
+  /* Official Chat/Trajectory tablist: removed from layout entirely (S2.1 —
+     visibility:hidden still held a 27px row, so the header carried the
+     view-switch row's band TWICE: 72 + 27 + gap = 104px measured at 390px,
+     and a real iPhone added ~54px of notch on top of that). The header's own
+     padding-bottom above is now the row's seat.
+     display:none does NOT break the view switch: HTMLElement.click()
+     dispatches synthetically and fires React's handler regardless of
+     rendering — only real pointer hit-testing needs a box, and this plugin
+     never relies on it (MobileSessionHeader always calls .click()). */
+  ${SESSION_HEADER} [class$="_tabs"][role="tablist"] {
+    display: none;
+  }
+
+  /* View-switch row: "current view name + dots", replacing the (still
+     present, still clickable) official tablist visually. It renders inside
+     headerActions/headerUtilities, but titleRow's own position:relative
+     (set above) makes IT the containing block for absolute descendants —
+     display:contents on titleCluster does not break that search — so
+     top:100% sits directly under the title regardless of the title row's
+     actual height, with no hardcoded offset to keep in sync. */
+  /* Activity chip (subagents / background tasks) rides the right end of the
+     same band. It is a SIBLING of the switch button, not a child — that
+     button spans the full row, so nesting would make every tap on the chip
+     switch views too — and it shares titleRow as its containing block, so
+     top:100% lands both on the same 28px line. z-index puts it above the
+     row it overlaps. */
+  [data-mobile-nav="header-activity"] {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    height: 28px;
+    padding: 0 2px 0 10px;
+    border: none;
+    background: transparent;
+    color: var(--dsw-alias-label-secondary, rgba(0, 0, 0, .5));
+    font-family: inherit;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* pointer-events:none so the invisible official trigger laid over this pill
+     (effects/native-trigger-overlay.ts) is what a tap reaches. The pill is
+     visuals only. */
+  [data-mobile-nav="activity-pill"] {
+    pointer-events: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 18px;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  [data-mobile-nav="activity-pill"]:active {
+    opacity: .55;
+  }
+  [data-mobile-nav="activity-count"] {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Steady green = everything settled. */
+  [data-mobile-nav="activity-dot"] {
+    display: block;
+    width: 6px;
+    height: 6px;
+    margin-left: 1px;
+    border-radius: 50%;
+    background: var(--dsw-alias-state-success-primary, #16a34a);
+  }
+  /* A job that failed or was killed is not a success — never paint it green. */
+  [data-activity-state="warning"] [data-mobile-nav="activity-dot"] {
+    background: var(--dsw-alias-state-warn-primary, #d97706);
+  }
+  /* Pulsing blue = still running. Same state palette as the session dot. */
+  [data-activity-state="running"] [data-mobile-nav="activity-dot"] {
+    background: var(--dsw-alias-state-business-primary, #4f6ef7);
+    animation: dsh-zen-activity-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes dsh-zen-activity-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: .45; transform: scale(.72); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-activity-state="running"] [data-mobile-nav="activity-dot"] {
+      animation: none;
+    }
+  }
+
+  [data-mobile-nav="header-viewrow"] {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--dsw-alias-label-secondary, rgba(0, 0, 0, .5));
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 18px;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  [data-mobile-nav="header-viewrow-dots"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+  [data-mobile-nav="header-viewrow-dots"] > i {
+    display: block;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: .35;
+    font-style: normal;
+  }
+  [data-mobile-nav="header-viewrow-dots"] > i[data-active] {
+    opacity: 1;
+  }
+}
+`
