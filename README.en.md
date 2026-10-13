@@ -18,6 +18,14 @@ Harness's everything-is-a-plugin architecture makes another workflow possible: w
 
 Most cloud web/plugin updates do not require an APK reinstall; native permissions and bridge changes still do. The aim is a personal workbench that retains project context while its tools and model integrations can evolve with actual needs. This is a product direction, not a claim that the current release automatically selects or supports every model and task.
 
+## Network security and deployment hardening
+
+After putting my projects online, I began noticing recurring unsolicited scans and probes. My informal observation was sometimes dozens of sources in a day; this is not a consistently deduplicated metric, and the requests alone cannot establish whether an AI Agent was involved. Persistent cloud access also requires protecting project files, conversations and account information.
+
+My personal deployment has included tighter public ports and access controls, fixes for unauthorized file access, credential and dependency reviews, and encrypted backups outside the server. With explicit scope and permissions, the Agent can assist with inspecting owned projects, investigating anomalies and fixing issues. Firewalls and authentication rules enforce access; model judgment does not replace them. Findings need traceable records, notifications where configured, and verification after remediation.
+
+The public source includes workbench protections such as pairing/device authentication, project file boundaries, excluding private pages from the PWA offline cache, and permission-bound phone operations. Host firewall rules, scan monitoring and alerts, off-server backups and recovery procedures are separate deployment work, not a bundled one-click defense system in this release. A scan is not evidence of a successful intrusion. This project provides no automatic retaliation or guarantee against all attacks.
+
 ## Components
 
 - `packages/mobile-ui`: mobile UI, pairing gateway and push integration, derived from dsh-zen-remote.
