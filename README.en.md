@@ -4,6 +4,12 @@ A self-hosted mobile workbench built on DeepSeek Harness. Run the Agent on your 
 
 Independent community project; not an official DeepSeek product. **0.1.0-alpha.1 is an experimental source release.** Bring your own server, HTTPS endpoint and model credentials. No user conversations, private projects, email indexes, attachments or credentials are included.
 
+## Demo
+
+[Watch the mobile walkthrough (2 min 36 sec)](https://github.com/H2O-YAOZE/dsh-mobile-workbench/releases/download/v0.1.0-alpha.1/20261014-000639.mp4)
+
+Recorded on a personal deployment: projects, websites, files, chat and usage. Personal sites and data shown in the recording are not included in the source release.
+
 ## Models, Agents and a workbench you can keep extending
 
 The product thesis is that models and Agents form two foundations of AI solutions. Models provide capabilities such as language, reasoning, code and vision; an Agent connects them to tools, context, permissions and execution workflows. Different model/Agent combinations fit different tasks.

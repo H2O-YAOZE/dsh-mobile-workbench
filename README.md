@@ -6,6 +6,12 @@
 
 [English](README.en.md) · [安装说明](docs/CONFIGURATION.md) · [发布检查](docs/RELEASE_READINESS.md)
 
+## 操作演示
+
+[观看手机端操作视频（2 分 36 秒）](https://github.com/H2O-YAOZE/dsh-mobile-workbench/releases/download/v0.1.0-alpha.1/20261014-000639.mp4)
+
+个人部署实录：项目浏览、网站使用、文件入口、对话和用量视图。展示中的个人网站与数据不包含在开源代码中。
+
 ## 为什么做
 
 使用近两个月后，我希望把分散的 AI 项目和文件集中管理，并在不打开个人电脑时，通过手机继续修改云端项目。项目工作台把文件、产生文件的对话和后续修改关联起来；代码翻译便于阅读项目结构和改动。
